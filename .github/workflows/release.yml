@@ -21,14 +21,14 @@ jobs:
 
     - name: Generate temporary keystore
       run: |
-        keytool -genkey -v -keystore my-upload-key.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload -dname "CN=Malas, OU=Finance, O=Malas, L=City, S=State, C=ID" -storepass password -keypass password
+        keytool -genkey -v -keystore app/my-upload-key.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload -dname "CN=Malas, OU=Finance, O=Malas, L=City, S=State, C=ID" -storepass password -keypass password
         
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew || true
 
     - name: Build with Gradle
       env:
-        KEYSTORE_PATH: ${{ github.workspace }}/my-upload-key.jks
+        KEYSTORE_PATH: my-upload-key.jks
         STORE_PASSWORD: password
         KEY_PASSWORD: password
       run: |

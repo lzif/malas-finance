@@ -2,15 +2,21 @@ package com.example.ui
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
+import android.os.Environment
+import android.provider.MediaStore
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -37,6 +43,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -130,6 +137,8 @@ fun EntryScreen(viewModel: MainViewModel) {
     val notesInput by viewModel.notesInput.collectAsStateWithLifecycle()
     val selectedCategory by viewModel.selectedCategory.collectAsStateWithLifecycle()
     val transactionType by viewModel.transactionType.collectAsStateWithLifecycle()
+    val frequentLogs by viewModel.frequentLogs.collectAsStateWithLifecycle()
+    val subcategories by viewModel.subcategories.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
 
@@ -154,7 +163,7 @@ fun EntryScreen(viewModel: MainViewModel) {
         Column(modifier = Modifier.weight(1f).fillMaxWidth()) {
             Text("QUICK LOGS", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = TextGray))
             HorizontalDivider(color = MediumGray, thickness = 1.dp, modifier = Modifier.padding(vertical = 8.dp))
-            transactions.take(4).forEach { tx ->
+            transactions.take(2).forEach { tx ->
                 val dateFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
                 val timeStr = dateFormat.format(Date(tx.timestamp))
                 
@@ -192,7 +201,11 @@ fun EntryScreen(viewModel: MainViewModel) {
             onCategorySelect = viewModel::onCategorySelect,
             transactionType = transactionType,
             onTypeSelect = viewModel::onTypeSelect,
-            onSave = viewModel::saveTransaction
+            onSave = viewModel::saveTransaction,
+            frequentLogs = frequentLogs,
+            subcategories = subcategories,
+            onAddAmount = viewModel::addAmount,
+            onApplyFrequent = viewModel::applyFrequent
         )
     }
 }
@@ -215,6 +228,16 @@ fun LogsScreen(viewModel: MainViewModel) {
 
 @Composable
 fun HeaderSection(inflow: Long, outflow: Long, balance: Long, transactions: List<Transaction>, context: Context) {
+    var showExportDialog by remember { mutableStateOf(false) }
+
+    if (showExportDialog) {
+        ExportDialog(
+            transactions = transactions,
+            onDismiss = { showExportDialog = false },
+            context = context
+        )
+    }
+
     Column(
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -238,7 +261,7 @@ fun HeaderSection(inflow: Long, outflow: Long, balance: Long, transactions: List
                     imageVector = Icons.Default.Share,
                     contentDescription = "Export",
                     tint = TextWhite,
-                    modifier = Modifier.size(20.dp).clickable { exportToClipboard(context, transactions) }
+                    modifier = Modifier.size(20.dp).clickable { showExportDialog = true }
                 )
             }
         }
@@ -316,12 +339,34 @@ fun MidSection(
     onCategorySelect: (String) -> Unit,
     transactionType: String,
     onTypeSelect: (String) -> Unit,
-    onSave: () -> Unit
+    onSave: () -> Unit,
+    frequentLogs: List<Transaction>,
+    subcategories: List<String>,
+    onAddAmount: (Long) -> Unit,
+    onApplyFrequent: (Long, String, String, String) -> Unit
 ) {
+    var isAddingSubcat by remember { mutableStateOf(false) }
+
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // Quick Action Chips
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf(5000L, 10000L, 50000L).forEach { amt ->
+                QuickActionChip(text = "+${amt/1000}k") { onAddAmount(amt) }
+            }
+            frequentLogs.forEach { tx ->
+                val catDisp = if (tx.category == "OPS") "OPER" else tx.category
+                QuickActionChip(text = "${tx.notes.ifBlank{catDisp}} ${tx.amount/1000}k", isDynamic = true) {
+                    onApplyFrequent(tx.amount, tx.category, tx.notes, tx.type)
+                }
+            }
+        }
+
         Column(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -365,24 +410,64 @@ fun MidSection(
             }
         }
 
-        // Notes
-        BasicTextField(
-            value = notesInput,
-            onValueChange = { onNotesChange(it.uppercase()) },
-            singleLine = true,
-            textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = White),
-            modifier = Modifier.fillMaxWidth().background(DarkGray).padding(12.dp).testTag("notes_input"),
-            cursorBrush = SolidColor(White),
-            decorationBox = { innerTextField ->
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    if (notesInput.isEmpty()) {
-                        Text("NOTES: BENSIN MOTOR", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = BorderGray))
-                    }
-                    innerTextField()
-                    Box(modifier = Modifier.matchParentSize().padding(top = 24.dp).background(BorderGray).height(1.dp) )
+        // Subcategory / Tags
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            subcategories.forEach { subcat ->
+                val isSelected = notesInput == subcat
+                Surface(
+                    modifier = Modifier.clickable { onNotesChange(if (isSelected) "" else subcat) },
+                    shape = RoundedCornerShape(4.dp),
+                    color = if (isSelected) White else DarkGray
+                ) {
+                    Text(
+                        text = subcat,
+                        style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = if (isSelected) Black else White),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                    )
                 }
             }
-        )
+
+            if (isAddingSubcat) {
+                var newSub by remember { mutableStateOf("") }
+                BasicTextField(
+                    value = newSub,
+                    onValueChange = { newSub = it.uppercase() },
+                    singleLine = true,
+                    textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = White),
+                    modifier = Modifier.background(DarkGray, RoundedCornerShape(4.dp)).padding(horizontal = 12.dp, vertical = 8.dp).width(100.dp),
+                    cursorBrush = SolidColor(White),
+                    decorationBox = { inner ->
+                        if (newSub.isEmpty()) Text("NEW TAG...", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = TextGray))
+                        inner()
+                    }
+                )
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = "Save Tag",
+                    tint = White,
+                    modifier = Modifier.size(24.dp).background(CoreColor, RoundedCornerShape(4.dp)).clickable {
+                        if (newSub.isNotBlank()) onNotesChange(newSub)
+                        isAddingSubcat = false
+                    }
+                )
+            } else {
+                Surface(
+                    modifier = Modifier.clickable { isAddingSubcat = true },
+                    shape = RoundedCornerShape(4.dp),
+                    color = DarkGray
+                ) {
+                    Text(
+                        text = "+",
+                        style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = White),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                    )
+                }
+            }
+        }
 
         // SAVE BUTTON
         Button(
@@ -395,6 +480,22 @@ fun MidSection(
         ) {
             Text("EXECUTE ENTER", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 18.sp, fontWeight = FontWeight.Black))
         }
+    }
+}
+
+@Composable
+fun QuickActionChip(text: String, isDynamic: Boolean = false, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(4.dp),
+        color = if (isDynamic) OpsColor.copy(alpha = 0.2f) else DarkGray,
+        border = if (isDynamic) BorderStroke(1.dp, OpsColor) else null
+    ) {
+        Text(
+            text = text,
+            style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = if (isDynamic) OpsColor else White),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+        )
     }
 }
 
@@ -503,19 +604,153 @@ fun formatCurrency(amount: Long): String {
     return formatter.format(amount)
 }
 
-fun exportToClipboard(context: Context, transactions: List<Transaction>) {
-    val builder = java.lang.StringBuilder()
-    val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
-    
-    builder.append("ID|Date|Type|Category|Amount|Notes\n")
-    transactions.forEach { tx ->
-        val dateStr = dateFormat.format(Date(tx.timestamp))
-        builder.append("${tx.id}|$dateStr|${tx.type}|${tx.category}|${tx.amount}|${tx.notes}\n")
+@Composable
+fun ExportDialog(transactions: List<Transaction>, onDismiss: () -> Unit, context: Context) {
+    var selectedRange by remember { mutableStateOf("Current Month") }
+    val ranges = listOf("This Week", "Current Month", "All Time")
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = MediumGray,
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text("EXPORT FILTER", style = TextStyle(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = White))
+                
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ranges.forEach { range ->
+                        Surface(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(40.dp)
+                                .clickable { selectedRange = range },
+                            color = if (selectedRange == range) White else DarkGray,
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(range, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = if (selectedRange == range) Black else TextGray))
+                            }
+                        }
+                    }
+                }
+
+                HorizontalDivider(color = BorderGray)
+
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = {
+                            val md = generateMarkdown(transactions, selectedRange)
+                            copyToClipboard(context, md)
+                            onDismiss()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = DarkGray)
+                    ) {
+                        Text("Copy to Clipboard", style = TextStyle(fontFamily = FontFamily.Monospace, color = White))
+                    }
+                    Button(
+                        onClick = {
+                            val md = generateMarkdown(transactions, selectedRange)
+                            saveToFile(context, md, "MalasFinance_Export.md", "text/markdown")
+                            onDismiss()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = DarkGray)
+                    ) {
+                        Text("Save as Markdown (.md)", style = TextStyle(fontFamily = FontFamily.Monospace, color = White))
+                    }
+                    Button(
+                        onClick = {
+                            val md = generateMarkdown(transactions, selectedRange)
+                            saveToFile(context, md, "MalasFinance_Export.txt", "text/plain")
+                            onDismiss()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = DarkGray)
+                    ) {
+                        Text("Save as Text (.txt)", style = TextStyle(fontFamily = FontFamily.Monospace, color = White))
+                    }
+                }
+            }
+        }
     }
+}
 
+fun copyToClipboard(context: Context, text: String) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    val clip = ClipData.newPlainText("MalasFinance Export", builder.toString())
+    val clip = ClipData.newPlainText("MalasFinance Export", text)
     clipboard.setPrimaryClip(clip)
-
     Toast.makeText(context, "Exported to Clipboard", Toast.LENGTH_SHORT).show()
 }
+
+fun saveToFile(context: Context, text: String, filename: String, mimeType: String) {
+    val resolver = context.contentResolver
+    val contentValues = ContentValues().apply {
+        put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
+        put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+        put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+    }
+
+    val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+    if (uri != null) {
+        resolver.openOutputStream(uri)?.use { outputStream ->
+            outputStream.write(text.toByteArray())
+        }
+        Toast.makeText(context, "Saved to Downloads", Toast.LENGTH_SHORT).show()
+    } else {
+        Toast.makeText(context, "Failed to save file", Toast.LENGTH_SHORT).show()
+    }
+}
+
+fun generateMarkdown(transactions: List<Transaction>, range: String): String {
+    val filtered = filterByRange(transactions, range)
+    val totalIn = filtered.filter { it.type == "IN" }.sumOf { it.amount }
+    val totalOut = filtered.filter { it.type == "OUT" }.sumOf { it.amount }
+    val balance = totalIn - totalOut
+
+    val outCore = filtered.filter { it.type == "OUT" && it.category == "CORE" }.sumOf { it.amount }
+    val outOper = filtered.filter { it.type == "OUT" && (it.category == "OPER" || it.category == "OPS") }.sumOf { it.amount }
+    val outHobby = filtered.filter { it.type == "OUT" && it.category == "HOBBY" }.sumOf { it.amount }
+    val outVault = filtered.filter { it.type == "OUT" && it.category == "VAULT" }.sumOf { it.amount }
+
+    val builder = StringBuilder()
+    builder.appendLine("# SUMMARY ($range)")
+    builder.appendLine("- Current Balance: $balance")
+    builder.appendLine("- Total IN: $totalIn")
+    builder.appendLine("- Total OUT: $totalOut")
+    builder.appendLine()
+    builder.appendLine("## OUT BY CATEGORY")
+    builder.appendLine("- CORE: $outCore")
+    builder.appendLine("- OPERASIONAL: $outOper")
+    builder.appendLine("- HOBBY: $outHobby")
+    builder.appendLine("- VAULT: $outVault")
+    builder.appendLine()
+    builder.appendLine("## LEDGER LOG")
+    builder.appendLine("| Date | Type (IN/OUT) | Category | Subcategory | Amount |")
+    builder.appendLine("|---|---|---|---|---|")
+
+    val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+    filtered.forEach { tx ->
+        val dStr = dateFormat.format(Date(tx.timestamp))
+        val dispCat = if (tx.category == "OPS") "OPERASIONAL" else tx.category
+        val subcat = tx.notes.ifBlank { "-" }
+        builder.appendLine("| $dStr | ${tx.type} | $dispCat | $subcat | ${tx.amount} |")
+    }
+
+    return builder.toString()
+}
+
+fun filterByRange(transactions: List<Transaction>, range: String): List<Transaction> {
+    if (range == "All Time") return transactions
+    val now = Calendar.getInstance()
+    return transactions.filter { tx ->
+        val cal = Calendar.getInstance().apply { timeInMillis = tx.timestamp }
+        when (range) {
+            "This Week" -> cal.get(Calendar.WEEK_OF_YEAR) == now.get(Calendar.WEEK_OF_YEAR) && cal.get(Calendar.YEAR) == now.get(Calendar.YEAR)
+            "Current Month" -> cal.get(Calendar.MONTH) == now.get(Calendar.MONTH) && cal.get(Calendar.YEAR) == now.get(Calendar.YEAR)
+            else -> true
+        }
+    }
+}
+

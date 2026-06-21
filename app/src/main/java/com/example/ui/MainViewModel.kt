@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -33,6 +35,24 @@ class MainViewModel(private val repository: TransactionRepository) : ViewModel()
     private val _transactionType = MutableStateFlow("OUT") // "IN" or "OUT"
     val transactionType = _transactionType.asStateFlow()
 
+    val frequentLogs: StateFlow<List<Transaction>> = transactions.map { txList ->
+        txList.groupBy { "${it.amount}|${it.category}|${it.notes}|${it.type}" }
+            .map { entry -> entry.value.first() to entry.value.size }
+            .sortedByDescending { it.second }
+            .map { it.first }
+            .filter { it.notes.isNotBlank() }
+            .take(3)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val subcategories: StateFlow<List<String>> = combine(transactions, selectedCategory) { txList, category ->
+        txList.filter { it.category == category && it.notes.isNotBlank() }
+            .groupBy { it.notes }
+            .map { it.key to it.value.size }
+            .sortedByDescending { it.second }
+            .map { it.first }
+            .take(5)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     fun onAmountChange(value: String) {
         // Only allow numbers
         if (value.all { it.isDigit() }) {
@@ -49,6 +69,18 @@ class MainViewModel(private val repository: TransactionRepository) : ViewModel()
     }
 
     fun onTypeSelect(type: String) {
+        _transactionType.value = type
+    }
+
+    fun addAmount(added: Long) {
+        val current = _amountInput.value.toLongOrNull() ?: 0L
+        _amountInput.value = (current + added).toString()
+    }
+
+    fun applyFrequent(amount: Long, category: String, subcategory: String, type: String) {
+        _amountInput.value = amount.toString()
+        _selectedCategory.value = category
+        _notesInput.value = subcategory
         _transactionType.value = type
     }
 
