@@ -7,6 +7,7 @@ import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -25,7 +26,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -134,17 +137,53 @@ fun EntryScreen(viewModel: MainViewModel) {
     val totalOutflow = transactions.filter { it.type == "OUT" }.sumOf { it.amount }
     val balance = totalInflow - totalOutflow
 
+    val focusManager = LocalFocusManager.current
+
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .pointerInput(Unit) {
+                detectTapGestures(onTap = { focusManager.clearFocus() })
+            }
             .padding(16.dp)
     ) {
         HeaderSection(totalInflow, totalOutflow, balance, transactions, context)
         
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(24.dp))
+        
+        Column(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            Text("QUICK LOGS", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = TextGray))
+            HorizontalDivider(color = MediumGray, thickness = 1.dp, modifier = Modifier.padding(vertical = 8.dp))
+            transactions.take(4).forEach { tx ->
+                val dateFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
+                val timeStr = dateFormat.format(Date(tx.timestamp))
+                
+                val displayCategory = if (tx.category == "OPS") "OPER" else tx.category
+                val color = when (displayCategory) {
+                    "CORE" -> CoreColor
+                    "OPER" -> OpsColor
+                    "HOBBY" -> HobbyColor
+                    "VAULT" -> VaultColor
+                    else -> White
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(timeStr, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = TextGray), modifier = Modifier.width(48.dp))
+                    Text(displayCategory, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = color), modifier = Modifier.width(56.dp))
+                    Text(tx.notes.ifBlank { "NO NOTES" }, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = TextWhite), modifier = Modifier.weight(1f), maxLines = 1)
+                    Text(
+                        text = formatCurrency(tx.amount),
+                        style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = if (tx.type == "IN") color else TextWhite),
+                        textAlign = TextAlign.End
+                    )
+                }
+            }
+        }
         
         MidSection(
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.fillMaxWidth(),
             amountInput = amountInput,
             onAmountChange = viewModel::onAmountChange,
             notesInput = notesInput,
@@ -344,8 +383,6 @@ fun MidSection(
                 }
             }
         )
-
-        Spacer(modifier = Modifier.weight(1f))
 
         // SAVE BUTTON
         Button(
