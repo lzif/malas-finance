@@ -1,0 +1,49 @@
+name: Build Release APK
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: gradle
+
+    - name: Generate temporary keystore
+      run: |
+        keytool -genkey -v -keystore my-upload-key.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload -dname "CN=Malas, OU=Finance, O=Malas, L=City, S=State, C=ID" -storepass password -keypass password
+        
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew || true
+
+    - name: Build with Gradle
+      env:
+        KEYSTORE_PATH: my-upload-key.jks
+        STORE_PASSWORD: password
+        KEY_PASSWORD: password
+      run: |
+        if [ -f gradlew ]; then
+          ./gradlew assembleRelease
+        else
+          gradle assembleRelease
+        fi
+
+    - name: Rename APK
+      run: |
+        find app/build/outputs/apk/release/ -name "*.apk" -exec mv {} MalasFinance.apk \;
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: MalasFinance.apk
+        path: MalasFinance.apk
