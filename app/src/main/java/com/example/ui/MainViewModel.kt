@@ -47,13 +47,22 @@ class MainViewModel(private val repository: TransactionRepository) : ViewModel()
             .take(3)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val subcategories: StateFlow<List<String>> = combine(transactions, selectedCategory) { txList, category ->
-        txList.filter { it.category == category && it.subcategory.isNotBlank() }
+    private val _customSubcategories = MutableStateFlow<Map<String, Set<String>>>(emptyMap())
+
+    val subcategories: StateFlow<List<String>> = combine(
+        transactions, 
+        selectedCategory, 
+        _customSubcategories
+    ) { txList, category, customMap ->
+        val customForCat = customMap[category] ?: emptySet()
+        val existingForCat = txList.filter { it.category == category && it.subcategory.isNotBlank() }
             .groupBy { it.subcategory }
             .map { it.key to it.value.size }
             .sortedByDescending { it.second }
             .map { it.first }
             .take(5)
+            
+        (customForCat + existingForCat).distinct().take(5)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun onAmountChange(value: String) {
@@ -64,6 +73,15 @@ class MainViewModel(private val repository: TransactionRepository) : ViewModel()
     }
 
     fun onSubcategoryChange(value: String) {
+        _subcategoryInput.value = value
+    }
+    
+    fun onCustomSubcategoryAdded(value: String) {
+        val currentCategory = _selectedCategory.value
+        val currentMap = _customSubcategories.value.toMutableMap()
+        val currentSet = currentMap[currentCategory] ?: emptySet()
+        currentMap[currentCategory] = setOf(value) + currentSet
+        _customSubcategories.value = currentMap
         _subcategoryInput.value = value
     }
 

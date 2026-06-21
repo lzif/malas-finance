@@ -165,34 +165,40 @@ fun EntryScreen(viewModel: MainViewModel) {
         Column(modifier = Modifier.weight(1f).fillMaxWidth()) {
             Text("QUICK LOGS", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = TextGray))
             HorizontalDivider(color = MediumGray, thickness = 1.dp, modifier = Modifier.padding(vertical = 8.dp))
-            transactions.take(2).forEach { tx ->
-                val dateFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
-                val timeStr = dateFormat.format(Date(tx.timestamp))
-                
-                val displayCategory = if (tx.category == "OPS") "OPER" else tx.category
-                val color = when (displayCategory) {
-                    "CORE" -> CoreColor
-                    "OPER" -> OpsColor
-                    "HOBBY" -> HobbyColor
-                    "VAULT" -> VaultColor
-                    else -> White
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(timeStr, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = TextGray), modifier = Modifier.width(48.dp))
-                    Text(displayCategory, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = color), modifier = Modifier.width(56.dp))
+            LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                items(transactions) { tx ->
+                    val dateFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
+                    val timeStr = dateFormat.format(Date(tx.timestamp))
                     
-                    val combinedNotes = if (!tx.notes.isNullOrBlank()) "${tx.subcategory} (${tx.notes})" else tx.subcategory
-                    val notesText = combinedNotes.ifBlank { "NO NOTES" }
-
-                    Text(notesText, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = TextWhite), modifier = Modifier.weight(1f), maxLines = 1)
-                    Text(
-                        text = formatCurrency(tx.amount),
-                        style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = if (tx.type == "IN") color else TextWhite),
-                        textAlign = TextAlign.End
-                    )
+                    val displayCategory = if (tx.category == "OPS") "OPER" else tx.category
+                    val color = when (displayCategory) {
+                        "CORE" -> CoreColor
+                        "OPER" -> OpsColor
+                        "HOBBY" -> HobbyColor
+                        "VAULT" -> VaultColor
+                        else -> White
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(timeStr, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = TextGray))
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(displayCategory, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = color))
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            val subcatText = tx.subcategory.ifBlank { "NO SUBCATEGORY" }
+                            Text(subcatText, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = TextWhite), maxLines = 1)
+                            if (!tx.notes.isNullOrEmpty()) {
+                                Text(tx.notes, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 9.sp, color = TextGray), maxLines = 1)
+                            }
+                        }
+                        Text(
+                            text = formatCurrency(tx.amount),
+                            style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = if (tx.type == "IN") color else TextWhite),
+                            textAlign = TextAlign.End
+                        )
+                    }
                 }
             }
         }
@@ -203,6 +209,7 @@ fun EntryScreen(viewModel: MainViewModel) {
             onAmountChange = viewModel::onAmountChange,
             subcategoryInput = subcategoryInput,
             onSubcategoryChange = viewModel::onSubcategoryChange,
+            onCustomSubcategoryAdded = viewModel::onCustomSubcategoryAdded,
             notesInput = notesInput,
             onNotesChange = viewModel::onNotesChange,
             selectedCategory = selectedCategory,
@@ -255,7 +262,7 @@ fun HeaderSection(inflow: Long, outflow: Long, balance: Long, transactions: List
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                "MALAS_FINANCE_v1.1.0",
+                "MALAS_FINANCE_v1.1.1",
                 style = TextStyle(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 2.sp, color = TextGray)
             )
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -283,11 +290,11 @@ fun HeaderSection(inflow: Long, outflow: Long, balance: Long, transactions: List
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text("INFLOW", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 9.sp, color = TextGray))
+                Text("INCOME", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 9.sp, color = TextGray))
                 Text("+${formatCurrency(inflow)}", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 14.sp, color = VaultColor))
             }
             Column(modifier = Modifier.weight(1f)) {
-                Text("OUTFLOW", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 9.sp, color = TextGray))
+                Text("EXPENSE", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 9.sp, color = TextGray))
                 Text("-${formatCurrency(outflow)}", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 14.sp, color = CoreColor))
             }
             Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.End) {
@@ -343,6 +350,7 @@ fun MidSection(
     onAmountChange: (String) -> Unit,
     subcategoryInput: String,
     onSubcategoryChange: (String) -> Unit,
+    onCustomSubcategoryAdded: (String) -> Unit,
     notesInput: String,
     onNotesChange: (String) -> Unit,
     selectedCategory: String,
@@ -379,9 +387,10 @@ fun MidSection(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("ENTER AMOUNT: ", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = TextGray, letterSpacing = 2.sp))
+                Text("AMOUNT: ", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = TextGray, letterSpacing = 2.sp))
+                val typeText = if (transactionType == "IN") "INCOME" else "EXPENSE"
                 Text(
-                    text = transactionType,
+                    text = typeText,
                     color = if (transactionType == "IN") VaultColor else CoreColor,
                     style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp),
                     modifier = Modifier.clickable { onTypeSelect(if (transactionType == "IN") "OUT" else "IN") }
@@ -476,7 +485,7 @@ fun MidSection(
                     contentDescription = "Save Tag",
                     tint = White,
                     modifier = Modifier.size(24.dp).background(CoreColor, RoundedCornerShape(4.dp)).clickable {
-                        if (newSub.isNotBlank()) onSubcategoryChange(newSub)
+                        if (newSub.isNotBlank()) onCustomSubcategoryAdded(newSub)
                         isAddingSubcat = false
                     }
                 )
@@ -523,7 +532,7 @@ fun MidSection(
             contentPadding = PaddingValues(0.dp),
             enabled = amountInput.isNotBlank()
         ) {
-            Text("EXECUTE ENTER", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 18.sp, fontWeight = FontWeight.Black))
+            Text("SUBMIT", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 18.sp, fontWeight = FontWeight.Black))
         }
     }
 }
@@ -627,17 +636,20 @@ fun BottomSection(transactions: List<Transaction>, onDelete: (Int) -> Unit) {
                             .padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(timeStr, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = TextGray), modifier = Modifier.width(48.dp))
-                        Text(displayCategory, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = color), modifier = Modifier.width(56.dp))
-                        
-                        val combinedNotes = if (!tx.notes.isNullOrBlank()) "${tx.subcategory} (${tx.notes})" else tx.subcategory
-                        val notesText = combinedNotes.ifBlank { "NO NOTES" }
-                        
-                        Text(notesText, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = TextWhite), modifier = Modifier.weight(1f))
+                        Text(timeStr, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = TextGray))
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(displayCategory, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = color))
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            val subcatText = tx.subcategory.ifBlank { "NO SUBCATEGORY" }
+                            Text(subcatText, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = TextWhite), maxLines = 1)
+                            if (!tx.notes.isNullOrEmpty()) {
+                                Text(tx.notes, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 9.sp, color = TextGray), maxLines = 1)
+                            }
+                        }
                         Text(
                             text = formatCurrency(tx.amount),
                             style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = if (tx.type == "IN") color else TextWhite),
-                            modifier = Modifier.fillMaxWidth(),
                             textAlign = TextAlign.End
                         )
                     }
