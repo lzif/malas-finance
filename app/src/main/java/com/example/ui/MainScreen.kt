@@ -140,6 +140,8 @@ fun EntryScreen(viewModel: MainViewModel) {
     val frequentLogs by viewModel.frequentLogs.collectAsStateWithLifecycle()
     val subcategories by viewModel.subcategories.collectAsStateWithLifecycle()
 
+    val subcategoryInput by viewModel.subcategoryInput.collectAsStateWithLifecycle()
+
     val context = LocalContext.current
 
     val totalInflow = transactions.filter { it.type == "IN" }.sumOf { it.amount }
@@ -181,7 +183,11 @@ fun EntryScreen(viewModel: MainViewModel) {
                 ) {
                     Text(timeStr, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = TextGray), modifier = Modifier.width(48.dp))
                     Text(displayCategory, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = color), modifier = Modifier.width(56.dp))
-                    Text(tx.notes.ifBlank { "NO NOTES" }, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = TextWhite), modifier = Modifier.weight(1f), maxLines = 1)
+                    
+                    val combinedNotes = if (!tx.notes.isNullOrBlank()) "${tx.subcategory} (${tx.notes})" else tx.subcategory
+                    val notesText = combinedNotes.ifBlank { "NO NOTES" }
+
+                    Text(notesText, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = TextWhite), modifier = Modifier.weight(1f), maxLines = 1)
                     Text(
                         text = formatCurrency(tx.amount),
                         style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = if (tx.type == "IN") color else TextWhite),
@@ -195,6 +201,8 @@ fun EntryScreen(viewModel: MainViewModel) {
             modifier = Modifier.fillMaxWidth(),
             amountInput = amountInput,
             onAmountChange = viewModel::onAmountChange,
+            subcategoryInput = subcategoryInput,
+            onSubcategoryChange = viewModel::onSubcategoryChange,
             notesInput = notesInput,
             onNotesChange = viewModel::onNotesChange,
             selectedCategory = selectedCategory,
@@ -204,7 +212,7 @@ fun EntryScreen(viewModel: MainViewModel) {
             onSave = viewModel::saveTransaction,
             frequentLogs = frequentLogs,
             subcategories = subcategories,
-            onAddAmount = viewModel::addAmount,
+            onAppendZeros = viewModel::appendZeros,
             onApplyFrequent = viewModel::applyFrequent
         )
     }
@@ -247,7 +255,7 @@ fun HeaderSection(inflow: Long, outflow: Long, balance: Long, transactions: List
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                "MALAS_FINANCE_v1.0.4",
+                "MALAS_FINANCE_v1.1.0",
                 style = TextStyle(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 2.sp, color = TextGray)
             )
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -333,6 +341,8 @@ fun MidSection(
     modifier: Modifier = Modifier,
     amountInput: String,
     onAmountChange: (String) -> Unit,
+    subcategoryInput: String,
+    onSubcategoryChange: (String) -> Unit,
     notesInput: String,
     onNotesChange: (String) -> Unit,
     selectedCategory: String,
@@ -342,7 +352,7 @@ fun MidSection(
     onSave: () -> Unit,
     frequentLogs: List<Transaction>,
     subcategories: List<String>,
-    onAddAmount: (Long) -> Unit,
+    onAppendZeros: () -> Unit,
     onApplyFrequent: (Long, String, String, String) -> Unit
 ) {
     var isAddingSubcat by remember { mutableStateOf(false) }
@@ -356,13 +366,10 @@ fun MidSection(
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            listOf(5000L, 10000L, 50000L).forEach { amt ->
-                QuickActionChip(text = "+${amt/1000}k") { onAddAmount(amt) }
-            }
             frequentLogs.forEach { tx ->
                 val catDisp = if (tx.category == "OPS") "OPER" else tx.category
-                QuickActionChip(text = "${tx.notes.ifBlank{catDisp}} ${tx.amount/1000}k", isDynamic = true) {
-                    onApplyFrequent(tx.amount, tx.category, tx.notes, tx.type)
+                QuickActionChip(text = "${tx.subcategory.ifBlank{catDisp}} ${tx.amount/1000}k", isDynamic = true) {
+                    onApplyFrequent(tx.amount, tx.category, tx.subcategory, tx.type)
                 }
             }
         }
@@ -381,21 +388,40 @@ fun MidSection(
                 )
             }
             Spacer(modifier = Modifier.height(8.dp))
-            BasicTextField(
-                value = amountInput,
-                onValueChange = onAmountChange,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                singleLine = true,
-                textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 48.sp, fontWeight = FontWeight.Light, color = White, textAlign = TextAlign.Center),
-                modifier = Modifier.fillMaxWidth().testTag("amount_input"),
-                cursorBrush = SolidColor(White),
-                decorationBox = { innerTextField ->
-                    if (amountInput.isEmpty()) {
-                        Text("0", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 48.sp, fontWeight = FontWeight.Light, color = TextGray, textAlign = TextAlign.Center), modifier = Modifier.fillMaxWidth())
+            
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val formattedAmount = amountInput.toLongOrNull()?.let { formatCurrency(it).replace("IDR ", "") } ?: ""
+                BasicTextField(
+                    value = formattedAmount,
+                    onValueChange = { newVal ->
+                        val plainDigits = newVal.replace(".", "").replace(",", "")
+                        onAmountChange(plainDigits)
+                    },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 48.sp, fontWeight = FontWeight.Light, color = White, textAlign = TextAlign.Center),
+                    modifier = Modifier.weight(1f).testTag("amount_input"),
+                    cursorBrush = SolidColor(White),
+                    decorationBox = { innerTextField ->
+                        if (amountInput.isEmpty()) {
+                            Text("0", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 48.sp, fontWeight = FontWeight.Light, color = TextGray, textAlign = TextAlign.Center), modifier = Modifier.fillMaxWidth())
+                        }
+                        innerTextField()
                     }
-                    innerTextField()
+                )
+                
+                Surface(
+                    modifier = Modifier.clickable { onAppendZeros() },
+                    shape = RoundedCornerShape(8.dp),
+                    color = DarkGray
+                ) {
+                    Text(
+                        text = "000",
+                        style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 24.sp, color = White, fontWeight = FontWeight.Bold),
+                        modifier = Modifier.padding(16.dp)
+                    )
                 }
-            )
+            }
         }
 
         // Categories Grid (2x2)
@@ -417,9 +443,9 @@ fun MidSection(
             verticalAlignment = Alignment.CenterVertically
         ) {
             subcategories.forEach { subcat ->
-                val isSelected = notesInput == subcat
+                val isSelected = subcategoryInput == subcat
                 Surface(
-                    modifier = Modifier.clickable { onNotesChange(if (isSelected) "" else subcat) },
+                    modifier = Modifier.clickable { onSubcategoryChange(if (isSelected) "" else subcat) },
                     shape = RoundedCornerShape(4.dp),
                     color = if (isSelected) White else DarkGray
                 ) {
@@ -450,7 +476,7 @@ fun MidSection(
                     contentDescription = "Save Tag",
                     tint = White,
                     modifier = Modifier.size(24.dp).background(CoreColor, RoundedCornerShape(4.dp)).clickable {
-                        if (newSub.isNotBlank()) onNotesChange(newSub)
+                        if (newSub.isNotBlank()) onSubcategoryChange(newSub)
                         isAddingSubcat = false
                     }
                 )
@@ -468,6 +494,25 @@ fun MidSection(
                 }
             }
         }
+
+        // Notes (Optional)
+        BasicTextField(
+            value = notesInput ?: "",
+            onValueChange = onNotesChange,
+            singleLine = true,
+            textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = White),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp).testTag("notes_input"),
+            cursorBrush = SolidColor(White),
+            decorationBox = { innerTextField ->
+                Box(contentAlignment = Alignment.BottomStart) {
+                    if (notesInput.isNullOrEmpty()) {
+                        Text("Notes (Optional)", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = BorderGray))
+                    }
+                    innerTextField()
+                    Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(DarkGray))
+                }
+            }
+        )
 
         // SAVE BUTTON
         Button(
@@ -584,7 +629,11 @@ fun BottomSection(transactions: List<Transaction>, onDelete: (Int) -> Unit) {
                     ) {
                         Text(timeStr, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = TextGray), modifier = Modifier.width(48.dp))
                         Text(displayCategory, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = color), modifier = Modifier.width(56.dp))
-                        Text(tx.notes.ifBlank { "NO NOTES" }, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = TextWhite), modifier = Modifier.weight(1f))
+                        
+                        val combinedNotes = if (!tx.notes.isNullOrBlank()) "${tx.subcategory} (${tx.notes})" else tx.subcategory
+                        val notesText = combinedNotes.ifBlank { "NO NOTES" }
+                        
+                        Text(notesText, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = TextWhite), modifier = Modifier.weight(1f))
                         Text(
                             text = formatCurrency(tx.amount),
                             style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = if (tx.type == "IN") color else TextWhite),
@@ -734,7 +783,8 @@ fun generateMarkdown(transactions: List<Transaction>, range: String): String {
     filtered.forEach { tx ->
         val dStr = dateFormat.format(Date(tx.timestamp))
         val dispCat = if (tx.category == "OPS") "OPERASIONAL" else tx.category
-        val subcat = tx.notes.ifBlank { "-" }
+        val combinedNotes = if (!tx.notes.isNullOrBlank()) "${tx.subcategory} (${tx.notes})" else tx.subcategory
+        val subcat = combinedNotes.ifBlank { "-" }
         builder.appendLine("| $dStr | ${tx.type} | $dispCat | $subcat | ${tx.amount} |")
     }
 

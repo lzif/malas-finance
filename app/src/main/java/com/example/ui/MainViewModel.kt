@@ -26,6 +26,9 @@ class MainViewModel(private val repository: TransactionRepository) : ViewModel()
     private val _amountInput = MutableStateFlow("")
     val amountInput = _amountInput.asStateFlow()
 
+    private val _subcategoryInput = MutableStateFlow("")
+    val subcategoryInput = _subcategoryInput.asStateFlow()
+
     private val _notesInput = MutableStateFlow("")
     val notesInput = _notesInput.asStateFlow()
 
@@ -36,17 +39,17 @@ class MainViewModel(private val repository: TransactionRepository) : ViewModel()
     val transactionType = _transactionType.asStateFlow()
 
     val frequentLogs: StateFlow<List<Transaction>> = transactions.map { txList ->
-        txList.groupBy { "${it.amount}|${it.category}|${it.notes}|${it.type}" }
+        txList.groupBy { "${it.amount}|${it.category}|${it.subcategory}|${it.type}" }
             .map { entry -> entry.value.first() to entry.value.size }
             .sortedByDescending { it.second }
             .map { it.first }
-            .filter { it.notes.isNotBlank() }
+            .filter { it.subcategory.isNotBlank() }
             .take(3)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val subcategories: StateFlow<List<String>> = combine(transactions, selectedCategory) { txList, category ->
-        txList.filter { it.category == category && it.notes.isNotBlank() }
-            .groupBy { it.notes }
+        txList.filter { it.category == category && it.subcategory.isNotBlank() }
+            .groupBy { it.subcategory }
             .map { it.key to it.value.size }
             .sortedByDescending { it.second }
             .map { it.first }
@@ -58,6 +61,10 @@ class MainViewModel(private val repository: TransactionRepository) : ViewModel()
         if (value.all { it.isDigit() }) {
             _amountInput.value = value
         }
+    }
+
+    fun onSubcategoryChange(value: String) {
+        _subcategoryInput.value = value
     }
 
     fun onNotesChange(value: String) {
@@ -72,15 +79,17 @@ class MainViewModel(private val repository: TransactionRepository) : ViewModel()
         _transactionType.value = type
     }
 
-    fun addAmount(added: Long) {
-        val current = _amountInput.value.toLongOrNull() ?: 0L
-        _amountInput.value = (current + added).toString()
+    fun appendZeros() {
+        if (_amountInput.value.isNotEmpty()) {
+            _amountInput.value += "000"
+        }
     }
 
     fun applyFrequent(amount: Long, category: String, subcategory: String, type: String) {
         _amountInput.value = amount.toString()
         _selectedCategory.value = category
-        _notesInput.value = subcategory
+        _subcategoryInput.value = subcategory
+        _notesInput.value = ""
         _transactionType.value = type
     }
 
@@ -91,11 +100,13 @@ class MainViewModel(private val repository: TransactionRepository) : ViewModel()
                 amount = amount,
                 type = _transactionType.value,
                 category = _selectedCategory.value,
-                notes = _notesInput.value.trim()
+                subcategory = _subcategoryInput.value.trim(),
+                notes = _notesInput.value.trim().takeIf { it.isNotEmpty() }
             )
             viewModelScope.launch {
                 repository.insert(tx)
                 _amountInput.value = ""
+                _subcategoryInput.value = ""
                 _notesInput.value = ""
             }
         }

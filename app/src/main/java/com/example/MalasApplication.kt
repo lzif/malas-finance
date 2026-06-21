@@ -15,7 +15,9 @@ class MalasApplication : Application() {
             this,
             AppDatabase::class.java,
             "malas_database"
-        ).build()
+        )
+        .fallbackToDestructiveMigration()
+        .build()
         repository = TransactionRepository(database.transactionDao())
     }
 }

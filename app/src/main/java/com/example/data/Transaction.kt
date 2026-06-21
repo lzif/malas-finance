@@ -9,6 +9,7 @@ data class Transaction(
     val amount: Long,
     val type: String, // "IN" or "OUT"
     val category: String,
-    val notes: String,
+    val subcategory: String,
+    val notes: String?,
     val timestamp: Long = System.currentTimeMillis()
 )
