@@ -1,0 +1,6 @@
+{
+  "name": "MalasFinance",
+  "description": "A zero-latency, offline-first expense tracker.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
