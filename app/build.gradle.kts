@@ -31,31 +31,22 @@ android {
 
   signingConfigs {
     create("release") {
-      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
-      storeFile = file(keystorePath)
-      storePassword = System.getenv("STORE_PASSWORD")
-      keyAlias = "upload"
-      keyPassword = System.getenv("KEY_PASSWORD")
-    }
-    create("debugConfig") {
-      storeFile = file("${rootDir}/debug.keystore")
-      storePassword = "android"
-      keyAlias = "androiddebugkey"
-      keyPassword = "android"
+      storeFile = file("malas.keystore") // Langsung nembak ke file keystore permanen lu
+      storePassword = "malas123"
+      keyAlias = "malas"
+      keyPassword = "malas123"
     }
   }
 
   buildTypes {
     release {
       isCrunchPngs = false
-      isMinifyEnabled = false
+      isMinifyEnabled = false // Biarin false biar lu nggak pusing ngurusin error ProGuard
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      signingConfig = signingConfigs.getByName("debugConfig")
-    }
-    debug {
-      signingConfig = signingConfigs.getByName("debugConfig")
+      signingConfig = signingConfigs.getByName("release") // Pakai signature release yang asli
     }
   }
+
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11
     targetCompatibility = JavaVersion.VERSION_11
