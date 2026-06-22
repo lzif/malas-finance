@@ -65,13 +65,13 @@ fun MainScreen(viewModel: MainViewModel) {
     val currentRoute = navBackStackEntry?.destination?.route ?: "entry"
 
     Scaffold(
-        containerColor = Black,
+        containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.systemBars,
         bottomBar = {
             NavigationBar(
-                containerColor = Black,
-                contentColor = TextWhite,
-                tonalElevation = 0.dp,
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                tonalElevation = 8.dp,
                 modifier = Modifier.padding(top = 8.dp)
             ) {
                 NavigationBarItem(
@@ -84,11 +84,11 @@ fun MainScreen(viewModel: MainViewModel) {
                         }
                     },
                     icon = { Icon(Icons.Default.Add, contentDescription = "Entry") },
-                    label = { Text("ENTRY", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp)) },
+                    label = { Text("ENTRY", style = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 10.sp)) },
                     colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = Black,
-                        selectedTextColor = White,
-                        indicatorColor = White,
+                        selectedIconColor = White,
+                        selectedTextColor = PrimaryBlue,
+                        indicatorColor = PrimaryBlue,
                         unselectedIconColor = TextGray,
                         unselectedTextColor = TextGray
                     )
@@ -103,11 +103,11 @@ fun MainScreen(viewModel: MainViewModel) {
                         }
                     },
                     icon = { Icon(Icons.Default.List, contentDescription = "Logs") },
-                    label = { Text("LOGS", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp)) },
+                    label = { Text("LOGS", style = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 10.sp)) },
                     colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = Black,
-                        selectedTextColor = White,
-                        indicatorColor = White,
+                        selectedIconColor = White,
+                        selectedTextColor = PrimaryBlue,
+                        indicatorColor = PrimaryBlue,
                         unselectedIconColor = TextGray,
                         unselectedTextColor = TextGray
                     )
@@ -163,9 +163,9 @@ fun EntryScreen(viewModel: MainViewModel) {
         Spacer(modifier = Modifier.height(24.dp))
         
         Column(modifier = Modifier.weight(1f).fillMaxWidth()) {
-            Text("QUICK LOGS", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = TextGray))
-            HorizontalDivider(color = MediumGray, thickness = 1.dp, modifier = Modifier.padding(vertical = 8.dp))
-            LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            Text("QUICK LOGS", style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, color = TextGray))
+            Spacer(modifier = Modifier.height(8.dp))
+            LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(transactions) { tx ->
                     val dateFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
                     val timeStr = dateFormat.format(Date(tx.timestamp))
@@ -176,28 +176,37 @@ fun EntryScreen(viewModel: MainViewModel) {
                         "OPER" -> OpsColor
                         "HOBBY" -> HobbyColor
                         "VAULT" -> VaultColor
-                        else -> White
+                        else -> TextPrimary
                     }
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = White,
+                        tonalElevation = 2.dp,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(timeStr, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = TextGray))
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(displayCategory, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = color))
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            val subcatText = tx.subcategory.ifBlank { "NO SUBCATEGORY" }
-                            Text(subcatText, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = TextWhite), maxLines = 1)
-                            if (!tx.notes.isNullOrEmpty()) {
-                                Text(tx.notes, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 9.sp, color = TextGray), maxLines = 1)
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(timeStr, style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 10.sp, color = TextGray))
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Surface(color = color.copy(alpha = 0.1f), shape = RoundedCornerShape(percent = 50)) {
+                                Text(displayCategory, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = color))
                             }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                val subcatText = tx.subcategory.ifBlank { "NO SUBCATEGORY" }
+                                Text(subcatText, style = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = TextPrimary), maxLines = 1)
+                                if (!tx.notes.isNullOrEmpty()) {
+                                    Text(tx.notes, style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 10.sp, color = TextGray), maxLines = 1)
+                                }
+                            }
+                            Text(
+                                text = formatCurrency(tx.amount),
+                                style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 14.sp, fontWeight = FontWeight.Black, color = if (tx.type == "IN") VaultColor else TextPrimary),
+                                textAlign = TextAlign.End
+                            )
                         }
-                        Text(
-                            text = formatCurrency(tx.amount),
-                            style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = if (tx.type == "IN") color else TextWhite),
-                            textAlign = TextAlign.End
-                        )
                     }
                 }
             }
@@ -253,33 +262,39 @@ fun HeaderSection(inflow: Long, outflow: Long, balance: Long, transactions: List
         )
     }
 
-    Column(
-        modifier = Modifier.fillMaxWidth()
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        color = White,
+        tonalElevation = 4.dp
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(20.dp)
         ) {
-            Text(
-                "MALAS_FINANCE_v1.1.1",
-                style = TextStyle(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 2.sp, color = TextGray)
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Icon(
-                    imageVector = Icons.Default.Refresh,
-                    contentDescription = "History",
-                    tint = TextWhite,
-                    modifier = Modifier.size(20.dp).clickable { /* Keep structure */ }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "MALAS_FINANCE_v1.1.1",
+                    style = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp, letterSpacing = 1.sp, color = TextGray)
                 )
-                Icon(
-                    imageVector = Icons.Default.Share,
-                    contentDescription = "Export",
-                    tint = TextWhite,
-                    modifier = Modifier.size(20.dp).clickable { showExportDialog = true }
-                )
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "History",
+                        tint = TextPrimary,
+                        modifier = Modifier.size(20.dp).clickable { /* Keep structure */ }
+                    )
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = "Export",
+                        tint = TextPrimary,
+                        modifier = Modifier.size(20.dp).clickable { showExportDialog = true }
+                    )
+                }
             }
-        }
         
         Spacer(modifier = Modifier.height(16.dp))
         
@@ -290,16 +305,16 @@ fun HeaderSection(inflow: Long, outflow: Long, balance: Long, transactions: List
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text("INCOME", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 9.sp, color = TextGray))
-                Text("+${formatCurrency(inflow)}", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 14.sp, color = VaultColor))
+                Text("INCOME", style = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 10.sp, color = TextGray))
+                Text("+${formatCurrency(inflow)}", style = TextStyle(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Black, fontSize = 16.sp, color = VaultColor))
             }
             Column(modifier = Modifier.weight(1f)) {
-                Text("EXPENSE", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 9.sp, color = TextGray))
-                Text("-${formatCurrency(outflow)}", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 14.sp, color = CoreColor))
+                Text("EXPENSE", style = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 10.sp, color = TextGray))
+                Text("-${formatCurrency(outflow)}", style = TextStyle(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Black, fontSize = 16.sp, color = CoreColor))
             }
             Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.End) {
-                Text("BALANCE", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 9.sp, color = TextGray))
-                Text(formatCurrency(balance), style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = White))
+                Text("BALANCE", style = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 10.sp, color = TextGray))
+                Text(formatCurrency(balance), style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 16.sp, fontWeight = FontWeight.Black, color = TextPrimary))
             }
         }
 
@@ -323,21 +338,23 @@ fun HeaderSection(inflow: Long, outflow: Long, balance: Long, transactions: List
             CategoryStatBox("HOBBY", hobbyPct, HobbyColor)
             CategoryStatBox("VAULT", vaultPct, VaultColor)
         }
+        }
     }
 }
 
 @Composable
 fun CategoryStatBox(name: String, percentage: Int, color: Color) {
-    Box(
-        modifier = Modifier
-            .background(color = Color.Transparent)
+    Surface(
+        color = Color.Transparent
     ) {
-        Row(modifier = Modifier.padding(start = 4.dp)) {
-            Box(modifier = Modifier.width(2.dp).height(24.dp).background(color))
+        Row(modifier = Modifier.padding(start = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Surface(modifier = Modifier.size(16.dp), shape = CircleShape, color = color.copy(alpha = 0.2f)) {
+                Box(modifier = Modifier.fillMaxSize().padding(4.dp).background(color, CircleShape))
+            }
             Spacer(modifier = Modifier.width(4.dp))
             Column {
-                Text(name, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 8.sp, color = TextGray))
-                Text("$percentage%", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = TextWhite))
+                Text(name, style = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 9.sp, color = TextGray))
+                Text("$percentage%", style = TextStyle(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 11.sp, color = TextPrimary))
             }
         }
     }
@@ -387,12 +404,12 @@ fun MidSection(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("AMOUNT: ", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = TextGray, letterSpacing = 2.sp))
+                Text("AMOUNT: ", style = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 10.sp, color = TextGray, letterSpacing = 2.sp))
                 val typeText = if (transactionType == "IN") "INCOME" else "EXPENSE"
                 Text(
                     text = typeText,
                     color = if (transactionType == "IN") VaultColor else CoreColor,
-                    style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp),
+                    style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp),
                     modifier = Modifier.clickable { onTypeSelect(if (transactionType == "IN") "OUT" else "IN") }
                 )
             }
@@ -408,12 +425,12 @@ fun MidSection(
                     },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
-                    textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 48.sp, fontWeight = FontWeight.Light, color = White, textAlign = TextAlign.Center),
+                    textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 48.sp, fontWeight = FontWeight.Black, color = TextPrimary, textAlign = TextAlign.Center),
                     modifier = Modifier.weight(1f).testTag("amount_input"),
-                    cursorBrush = SolidColor(White),
+                    cursorBrush = SolidColor(TextPrimary),
                     decorationBox = { innerTextField ->
                         if (amountInput.isEmpty()) {
-                            Text("0", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 48.sp, fontWeight = FontWeight.Light, color = TextGray, textAlign = TextAlign.Center), modifier = Modifier.fillMaxWidth())
+                            Text("0", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 48.sp, fontWeight = FontWeight.Black, color = MediumGray, textAlign = TextAlign.Center), modifier = Modifier.fillMaxWidth())
                         }
                         innerTextField()
                     }
@@ -421,12 +438,12 @@ fun MidSection(
                 
                 Surface(
                     modifier = Modifier.clickable { onAppendZeros() },
-                    shape = RoundedCornerShape(8.dp),
-                    color = DarkGray
+                    shape = RoundedCornerShape(16.dp),
+                    color = ComponentBg
                 ) {
                     Text(
                         text = "000",
-                        style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 24.sp, color = White, fontWeight = FontWeight.Bold),
+                        style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 24.sp, color = TextPrimary, fontWeight = FontWeight.Bold),
                         modifier = Modifier.padding(16.dp)
                     )
                 }
@@ -455,13 +472,13 @@ fun MidSection(
                 val isSelected = subcategoryInput == subcat
                 Surface(
                     modifier = Modifier.clickable { onSubcategoryChange(if (isSelected) "" else subcat) },
-                    shape = RoundedCornerShape(4.dp),
-                    color = if (isSelected) White else DarkGray
+                    shape = RoundedCornerShape(percent = 50),
+                    color = if (isSelected) PrimaryBlue else ComponentBg
                 ) {
                     Text(
                         text = subcat,
-                        style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = if (isSelected) Black else White),
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                        style = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = if (isSelected) White else TextGray),
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                     )
                 }
             }
@@ -472,11 +489,11 @@ fun MidSection(
                     value = newSub,
                     onValueChange = { newSub = it.uppercase() },
                     singleLine = true,
-                    textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = White),
-                    modifier = Modifier.background(DarkGray, RoundedCornerShape(4.dp)).padding(horizontal = 12.dp, vertical = 8.dp).width(100.dp),
-                    cursorBrush = SolidColor(White),
+                    textStyle = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = TextPrimary),
+                    modifier = Modifier.background(ComponentBg, RoundedCornerShape(percent = 50)).padding(horizontal = 16.dp, vertical = 8.dp).width(100.dp),
+                    cursorBrush = SolidColor(TextPrimary),
                     decorationBox = { inner ->
-                        if (newSub.isEmpty()) Text("NEW TAG...", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = TextGray))
+                        if (newSub.isEmpty()) Text("NEW TAG...", style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 10.sp, color = TextGray))
                         inner()
                     }
                 )
@@ -484,21 +501,22 @@ fun MidSection(
                     imageVector = Icons.Default.Add,
                     contentDescription = "Save Tag",
                     tint = White,
-                    modifier = Modifier.size(24.dp).background(CoreColor, RoundedCornerShape(4.dp)).clickable {
+                    modifier = Modifier.size(32.dp).background(PrimaryBlue, CircleShape).clickable {
                         if (newSub.isNotBlank()) onCustomSubcategoryAdded(newSub)
                         isAddingSubcat = false
-                    }
+                    }.padding(4.dp)
                 )
             } else {
                 Surface(
                     modifier = Modifier.clickable { isAddingSubcat = true },
-                    shape = RoundedCornerShape(4.dp),
-                    color = DarkGray
+                    shape = CircleShape,
+                    color = ComponentBg
                 ) {
-                    Text(
-                        text = "+",
-                        style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = White),
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Add",
+                        tint = TextGray,
+                        modifier = Modifier.padding(8.dp).size(16.dp)
                     )
                 }
             }
@@ -509,16 +527,16 @@ fun MidSection(
             value = notesInput ?: "",
             onValueChange = onNotesChange,
             singleLine = true,
-            textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = White),
+            textStyle = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 12.sp, color = TextPrimary),
             modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp).testTag("notes_input"),
-            cursorBrush = SolidColor(White),
+            cursorBrush = SolidColor(TextPrimary),
             decorationBox = { innerTextField ->
                 Box(contentAlignment = Alignment.BottomStart) {
                     if (notesInput.isNullOrEmpty()) {
-                        Text("Notes (Optional)", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = BorderGray))
+                        Text("Notes (Optional)", style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 12.sp, color = TextGray))
                     }
                     innerTextField()
-                    Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(DarkGray))
+                    Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(MediumGray))
                 }
             }
         )
@@ -527,12 +545,12 @@ fun MidSection(
         Button(
             onClick = onSave,
             modifier = Modifier.fillMaxWidth().height(56.dp).testTag("save_button"),
-            colors = ButtonDefaults.buttonColors(containerColor = White, contentColor = Black),
-            shape = RoundedCornerShape(4.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue, contentColor = White),
+            shape = RoundedCornerShape(16.dp),
             contentPadding = PaddingValues(0.dp),
             enabled = amountInput.isNotBlank()
         ) {
-            Text("SUBMIT", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 18.sp, fontWeight = FontWeight.Black))
+            Text("SUBMIT", style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold))
         }
     }
 }
@@ -541,14 +559,14 @@ fun MidSection(
 fun QuickActionChip(text: String, isDynamic: Boolean = false, onClick: () -> Unit) {
     Surface(
         modifier = Modifier.clickable(onClick = onClick),
-        shape = RoundedCornerShape(4.dp),
-        color = if (isDynamic) OpsColor.copy(alpha = 0.2f) else DarkGray,
-        border = if (isDynamic) BorderStroke(1.dp, OpsColor) else null
+        shape = RoundedCornerShape(percent = 50),
+        color = if (isDynamic) OpsColor.copy(alpha = 0.1f) else ComponentBg,
+        border = if (isDynamic) BorderStroke(1.dp, OpsColor.copy(alpha = 0.5f)) else null
     ) {
         Text(
             text = text,
-            style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = if (isDynamic) OpsColor else White),
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+            style = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Medium, fontSize = 11.sp, color = if (isDynamic) OpsColor else TextPrimary),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
         )
     }
 }
@@ -557,20 +575,22 @@ fun QuickActionChip(text: String, isDynamic: Boolean = false, onClick: () -> Uni
 fun CategoryGridButton(text: String, isSelected: Boolean, color: Color, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Surface(
         modifier = modifier
-            .height(48.dp)
+            .height(56.dp)
             .clickable(onClick = onClick),
-        color = if (isSelected) MediumGray else Color.Transparent,
-        border = BorderStroke(1.dp, if (isSelected) White else BorderGray),
-        shape = RoundedCornerShape(4.dp)
+        color = if (isSelected) White else ComponentBg,
+        border = BorderStroke(if (isSelected) 2.dp else 1.dp, if (isSelected) color else color.copy(alpha = 0.2f)),
+        shape = RoundedCornerShape(16.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxSize(),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(modifier = Modifier.size(8.dp).background(color, CircleShape))
+            Surface(modifier = Modifier.size(24.dp), shape = CircleShape, color = color.copy(alpha = 0.1f)) {
+                Box(modifier = Modifier.fillMaxSize().padding(6.dp).background(color, CircleShape))
+            }
             Spacer(modifier = Modifier.width(8.dp))
-            Text(text, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (isSelected) color else TextWhite))
+            Text(text, style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (isSelected) TextPrimary else TextGray))
         }
     }
 }
@@ -584,15 +604,16 @@ fun BottomSection(transactions: List<Transaction>, onDelete: (Int) -> Unit) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("RECENT_LOGS", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = TextGray))
-            Text("LIFO_SORTED", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 9.sp, color = BorderGray))
+            Text("LOG BOOK", style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, color = TextGray))
+            Text("LIFO_SORTED", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 9.sp, color = TextGray))
         }
         
-        HorizontalDivider(color = MediumGray, thickness = 1.dp)
+        Spacer(modifier = Modifier.height(8.dp))
 
         LazyColumn(
             modifier = Modifier.fillMaxWidth(),
-            contentPadding = PaddingValues(bottom = 16.dp)
+            contentPadding = PaddingValues(bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(transactions, key = { it.id }) { tx ->
                 val dateFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
@@ -604,7 +625,7 @@ fun BottomSection(transactions: List<Transaction>, onDelete: (Int) -> Unit) {
                     "OPER" -> OpsColor
                     "HOBBY" -> HobbyColor
                     "VAULT" -> VaultColor
-                    else -> White
+                    else -> TextPrimary
                 }
 
                 SwipeToDismissBox(
@@ -617,44 +638,52 @@ fun BottomSection(transactions: List<Transaction>, onDelete: (Int) -> Unit) {
                         }
                     ),
                     backgroundContent = {
-                        Box(
-                            Modifier
-                                .fillMaxSize()
-                                .background(CoreColor)
-                                .padding(end = 16.dp),
-                            contentAlignment = Alignment.CenterEnd
+                        Surface(
+                            modifier = Modifier.fillMaxSize(),
+                            shape = RoundedCornerShape(16.dp),
+                            color = ProgressRed
                         ) {
-                            Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete", tint = Black)
+                            Box(
+                                modifier = Modifier.fillMaxSize().padding(end = 16.dp),
+                                contentAlignment = Alignment.CenterEnd
+                            ) {
+                                Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete", tint = White)
+                            }
                         }
                     },
                     enableDismissFromStartToEnd = false
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Black)
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        color = White,
+                        tonalElevation = 2.dp
                     ) {
-                        Text(timeStr, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = TextGray))
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(displayCategory, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = color))
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            val subcatText = tx.subcategory.ifBlank { "NO SUBCATEGORY" }
-                            Text(subcatText, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = TextWhite), maxLines = 1)
-                            if (!tx.notes.isNullOrEmpty()) {
-                                Text(tx.notes, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 9.sp, color = TextGray), maxLines = 1)
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(timeStr, style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 10.sp, color = TextGray))
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Surface(color = color.copy(alpha = 0.1f), shape = RoundedCornerShape(percent = 50)) {
+                                Text(displayCategory, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = color))
                             }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                val subcatText = tx.subcategory.ifBlank { "NO SUBCATEGORY" }
+                                Text(subcatText, style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary), maxLines = 1)
+                                if (!tx.notes.isNullOrEmpty()) {
+                                    Text(tx.notes, style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 10.sp, color = TextGray), maxLines = 1)
+                                }
+                            }
+                            Text(
+                                text = formatCurrency(tx.amount),
+                                style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 14.sp, fontWeight = FontWeight.Black, color = if (tx.type == "IN") VaultColor else TextPrimary),
+                                textAlign = TextAlign.End
+                            )
                         }
-                        Text(
-                            text = formatCurrency(tx.amount),
-                            style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = if (tx.type == "IN") color else TextWhite),
-                            textAlign = TextAlign.End
-                        )
                     }
                 }
-                HorizontalDivider(color = DarkGray, thickness = 1.dp)
             }
         }
     }
