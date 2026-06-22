@@ -124,7 +124,13 @@ fun MainScreen(viewModel: MainViewModel) {
                 EntryScreen(viewModel)
             }
             composable("logs") {
-                LogsScreen(viewModel)
+                LogsScreen(viewModel = viewModel, onNavigateToEntry = {
+                    navController.navigate("entry") {
+                        popUpTo(navController.graph.startDestinationId) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                })
             }
         }
     }
@@ -141,6 +147,13 @@ fun EntryScreen(viewModel: MainViewModel) {
     val subcategories by viewModel.subcategories.collectAsStateWithLifecycle()
 
     val subcategoryInput by viewModel.subcategoryInput.collectAsStateWithLifecycle()
+
+    val wallets by viewModel.wallets.collectAsStateWithLifecycle()
+    val walletSource by viewModel.walletSource.collectAsStateWithLifecycle()
+    val walletDestination by viewModel.walletDestination.collectAsStateWithLifecycle()
+    val feeInput by viewModel.feeInput.collectAsStateWithLifecycle()
+
+    val editingTransactionId by viewModel.editingTransactionId.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
 
@@ -225,9 +238,19 @@ fun EntryScreen(viewModel: MainViewModel) {
             onCategorySelect = viewModel::onCategorySelect,
             transactionType = transactionType,
             onTypeSelect = viewModel::onTypeSelect,
+            wallets = wallets.map { it.name },
+            walletSource = walletSource,
+            onWalletSourceSelect = viewModel::onWalletSourceSelect,
+            walletDestination = walletDestination,
+            onWalletDestinationSelect = viewModel::onWalletDestinationSelect,
+            feeInput = feeInput,
+            onFeeChange = viewModel::onFeeChange,
+            onAddWallet = viewModel::addWallet,
+            onDeleteWallet = viewModel::deleteWallet,
             onSave = viewModel::saveTransaction,
             frequentLogs = frequentLogs,
             subcategories = subcategories,
+            editingTransactionId = editingTransactionId,
             onAppendZeros = viewModel::appendZeros,
             onApplyFrequent = viewModel::applyFrequent
         )
@@ -235,7 +258,7 @@ fun EntryScreen(viewModel: MainViewModel) {
 }
 
 @Composable
-fun LogsScreen(viewModel: MainViewModel) {
+fun LogsScreen(viewModel: MainViewModel, onNavigateToEntry: () -> Unit) {
     val transactions by viewModel.transactions.collectAsStateWithLifecycle()
 
     Column(
@@ -245,7 +268,11 @@ fun LogsScreen(viewModel: MainViewModel) {
     ) {
         BottomSection(
             transactions = transactions,
-            onDelete = viewModel::deleteTransaction
+            onDelete = viewModel::deleteTransaction,
+            onEdit = { tx ->
+                viewModel.onEditTransaction(tx)
+                onNavigateToEntry()
+            }
         )
     }
 }
@@ -277,7 +304,7 @@ fun HeaderSection(inflow: Long, outflow: Long, balance: Long, transactions: List
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "MALAS_FINANCE_v1.1.1",
+                    "MALAS_FINANCE_v1.3.0",
                     style = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp, letterSpacing = 1.sp, color = TextGray)
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -374,13 +401,33 @@ fun MidSection(
     onCategorySelect: (String) -> Unit,
     transactionType: String,
     onTypeSelect: (String) -> Unit,
+    wallets: List<String>,
+    walletSource: String,
+    onWalletSourceSelect: (String) -> Unit,
+    walletDestination: String?,
+    onWalletDestinationSelect: (String) -> Unit,
+    feeInput: String,
+    onFeeChange: (String) -> Unit,
+    onAddWallet: (String) -> Unit,
+    onDeleteWallet: (String) -> Unit,
     onSave: () -> Unit,
     frequentLogs: List<Transaction>,
     subcategories: List<String>,
+    editingTransactionId: Int?,
     onAppendZeros: () -> Unit,
     onApplyFrequent: (Long, String, String, String) -> Unit
 ) {
     var isAddingSubcat by remember { mutableStateOf(false) }
+    var showWalletManager by remember { mutableStateOf(false) }
+
+    if (showWalletManager) {
+        WalletManagerDialog(
+            wallets = wallets,
+            onAddWallet = onAddWallet,
+            onDeleteWallet = onDeleteWallet,
+            onDismiss = { showWalletManager = false }
+        )
+    }
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -403,15 +450,17 @@ fun MidSection(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("AMOUNT: ", style = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 10.sp, color = TextGray, letterSpacing = 2.sp))
-                val typeText = if (transactionType == "IN") "INCOME" else "EXPENSE"
-                Text(
-                    text = typeText,
-                    color = if (transactionType == "IN") VaultColor else CoreColor,
-                    style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp),
-                    modifier = Modifier.clickable { onTypeSelect(if (transactionType == "IN") "OUT" else "IN") }
-                )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("TYPE: ", style = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 10.sp, color = TextGray, letterSpacing = 2.sp))
+                val types = listOf("OUT" to "EXPENSE", "IN" to "INCOME", "TRANSFER" to "TRANSFER")
+                types.forEach { (typeKey, textLabel) ->
+                    Text(
+                        text = textLabel,
+                        color = if (transactionType == typeKey) (if (typeKey == "IN") VaultColor else if (typeKey == "OUT") CoreColor else PrimaryBlue) else TextGray,
+                        style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 12.sp, fontWeight = if (transactionType == typeKey) FontWeight.ExtraBold else FontWeight.Normal, letterSpacing = 1.sp),
+                        modifier = Modifier.clickable { onTypeSelect(typeKey) }
+                    )
+                }
             }
             Spacer(modifier = Modifier.height(8.dp))
             
@@ -450,74 +499,133 @@ fun MidSection(
             }
         }
 
-        // Categories Grid (2x2)
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                CategoryGridButton("CORE", selectedCategory == "CORE", CoreColor, modifier = Modifier.weight(1f)) { onCategorySelect("CORE") }
-                CategoryGridButton("OPER", selectedCategory == "OPS", OpsColor, modifier = Modifier.weight(1f)) { onCategorySelect("OPS") }
+        // Wallet Selection
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("WALLET:", style = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 10.sp, color = TextGray))
+            WalletDropdown(
+                selectedWallet = walletSource.ifBlank { "CASH" },
+                wallets = wallets,
+                onSelect = onWalletSourceSelect,
+                modifier = Modifier.weight(1f)
+            )
+            Icon(
+                imageVector = Icons.Default.Settings,
+                contentDescription = "Manage Wallets",
+                tint = TextGray,
+                modifier = Modifier.size(24.dp).clickable { showWalletManager = true }
+            )
+        }
+
+        if (transactionType == "TRANSFER") {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("TO:", style = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 10.sp, color = TextGray))
+                WalletDropdown(
+                    selectedWallet = walletDestination ?: wallets.firstOrNull() ?: "BANK",
+                    wallets = wallets,
+                    onSelect = onWalletDestinationSelect,
+                    modifier = Modifier.weight(1f)
+                )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                CategoryGridButton("HOBBY", selectedCategory == "HOBBY", HobbyColor, modifier = Modifier.weight(1f)) { onCategorySelect("HOBBY") }
-                CategoryGridButton("VAULT", selectedCategory == "VAULT", VaultColor, modifier = Modifier.weight(1f)) { onCategorySelect("VAULT") }
+            
+            // Fee input
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("FEE:", style = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 10.sp, color = TextGray))
+                Spacer(modifier = Modifier.width(8.dp))
+                val formattedFee = feeInput.toLongOrNull()?.let { formatCurrency(it).replace("IDR ", "") } ?: ""
+                BasicTextField(
+                    value = formattedFee,
+                    onValueChange = { newVal -> onFeeChange(newVal.replace(".", "").replace(",", "")) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary),
+                    modifier = Modifier.weight(1f).testTag("fee_input"),
+                    cursorBrush = SolidColor(TextPrimary),
+                    decorationBox = { innerTextField ->
+                        if (feeInput.isEmpty()) {
+                            Text("0", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MediumGray))
+                        }
+                        innerTextField()
+                    }
+                )
             }
         }
 
-        // Subcategory / Tags
-        Row(
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            subcategories.forEach { subcat ->
-                val isSelected = subcategoryInput == subcat
-                Surface(
-                    modifier = Modifier.clickable { onSubcategoryChange(if (isSelected) "" else subcat) },
-                    shape = RoundedCornerShape(percent = 50),
-                    color = if (isSelected) PrimaryBlue else ComponentBg
-                ) {
-                    Text(
-                        text = subcat,
-                        style = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = if (isSelected) White else TextGray),
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                    )
+        // Categories Grid (2x2)
+        if (transactionType != "TRANSFER") {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                val cat1 = if (transactionType == "IN") "GAJI" else "CORE"
+                val cat2 = if (transactionType == "IN") "KEBUN" else "OPER"
+                val cat2Value = if (transactionType == "IN") "KEBUN" else "OPS"
+                val cat3 = if (transactionType == "IN") "BONUS" else "HOBBY"
+                val cat4 = if (transactionType == "IN") "LAINNYA" else "VAULT"
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CategoryGridButton(cat1, selectedCategory == cat1, CoreColor, modifier = Modifier.weight(1f)) { onCategorySelect(cat1) }
+                    CategoryGridButton(cat2, selectedCategory == cat2Value, OpsColor, modifier = Modifier.weight(1f)) { onCategorySelect(cat2Value) }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CategoryGridButton(cat3, selectedCategory == cat3, HobbyColor, modifier = Modifier.weight(1f)) { onCategorySelect(cat3) }
+                    CategoryGridButton(cat4, selectedCategory == cat4, VaultColor, modifier = Modifier.weight(1f)) { onCategorySelect(cat4) }
                 }
             }
 
-            if (isAddingSubcat) {
-                var newSub by remember { mutableStateOf("") }
-                BasicTextField(
-                    value = newSub,
-                    onValueChange = { newSub = it.uppercase() },
-                    singleLine = true,
-                    textStyle = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = TextPrimary),
-                    modifier = Modifier.background(ComponentBg, RoundedCornerShape(percent = 50)).padding(horizontal = 16.dp, vertical = 8.dp).width(100.dp),
-                    cursorBrush = SolidColor(TextPrimary),
-                    decorationBox = { inner ->
-                        if (newSub.isEmpty()) Text("NEW TAG...", style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 10.sp, color = TextGray))
-                        inner()
+            // Subcategory / Tags
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                subcategories.forEach { subcat ->
+                    val isSelected = subcategoryInput == subcat
+                    Surface(
+                        modifier = Modifier.clickable { onSubcategoryChange(if (isSelected) "" else subcat) },
+                        shape = RoundedCornerShape(percent = 50),
+                        color = if (isSelected) PrimaryBlue else ComponentBg
+                    ) {
+                        Text(
+                            text = subcat,
+                            style = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = if (isSelected) White else TextGray),
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                        )
                     }
-                )
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "Save Tag",
-                    tint = White,
-                    modifier = Modifier.size(32.dp).background(PrimaryBlue, CircleShape).clickable {
-                        if (newSub.isNotBlank()) onCustomSubcategoryAdded(newSub)
-                        isAddingSubcat = false
-                    }.padding(4.dp)
-                )
-            } else {
-                Surface(
-                    modifier = Modifier.clickable { isAddingSubcat = true },
-                    shape = CircleShape,
-                    color = ComponentBg
-                ) {
+                }
+
+                if (isAddingSubcat) {
+                    var newSub by remember { mutableStateOf("") }
+                    BasicTextField(
+                        value = newSub,
+                        onValueChange = { newSub = it.uppercase() },
+                        singleLine = true,
+                        textStyle = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = TextPrimary),
+                        modifier = Modifier.background(ComponentBg, RoundedCornerShape(percent = 50)).padding(horizontal = 16.dp, vertical = 8.dp).width(100.dp),
+                        cursorBrush = SolidColor(TextPrimary),
+                        decorationBox = { inner ->
+                            if (newSub.isEmpty()) Text("NEW TAG...", style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 10.sp, color = TextGray))
+                            inner()
+                        }
+                    )
                     Icon(
                         imageVector = Icons.Default.Add,
-                        contentDescription = "Add",
-                        tint = TextGray,
-                        modifier = Modifier.padding(8.dp).size(16.dp)
+                        contentDescription = "Save Tag",
+                        tint = White,
+                        modifier = Modifier.size(32.dp).background(PrimaryBlue, CircleShape).clickable {
+                            if (newSub.isNotBlank()) onCustomSubcategoryAdded(newSub)
+                            isAddingSubcat = false
+                        }.padding(4.dp)
                     )
+                } else {
+                    Surface(
+                        modifier = Modifier.clickable { isAddingSubcat = true },
+                        shape = CircleShape,
+                        color = ComponentBg
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "Add",
+                            tint = TextGray,
+                            modifier = Modifier.padding(8.dp).size(16.dp)
+                        )
+                    }
                 }
             }
         }
@@ -550,7 +658,7 @@ fun MidSection(
             contentPadding = PaddingValues(0.dp),
             enabled = amountInput.isNotBlank()
         ) {
-            Text("SUBMIT", style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold))
+            Text(if (editingTransactionId != null) "UPDATE" else "SUBMIT", style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold))
         }
     }
 }
@@ -597,7 +705,7 @@ fun CategoryGridButton(text: String, isSelected: Boolean, color: Color, modifier
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BottomSection(transactions: List<Transaction>, onDelete: (Int) -> Unit) {
+fun BottomSection(transactions: List<Transaction>, onDelete: (Int) -> Unit, onEdit: (Transaction) -> Unit) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
@@ -654,7 +762,13 @@ fun BottomSection(transactions: List<Transaction>, onDelete: (Int) -> Unit) {
                     enableDismissFromStartToEnd = false
                 ) {
                     Surface(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .pointerInput(Unit) {
+                                detectTapGestures(
+                                    onLongPress = { onEdit(tx) }
+                                )
+                            },
                         shape = RoundedCornerShape(16.dp),
                         color = White,
                         tonalElevation = 2.dp
@@ -816,6 +930,19 @@ fun generateMarkdown(transactions: List<Transaction>, range: String): String {
     builder.appendLine("- HOBBY: $outHobby")
     builder.appendLine("- VAULT: $outVault")
     builder.appendLine()
+    
+    builder.appendLine("## OUT BY SUBCATEGORY")
+    val subcatMap = filtered.filter { it.type == "OUT" && it.subcategory.isNotBlank() }
+        .groupBy { it.subcategory }
+        .mapValues { entry -> entry.value.sumOf { it.amount } }
+        .toList()
+        .sortedByDescending { it.second }
+    
+    subcatMap.forEach { (subcat, amount) ->
+        builder.appendLine("- $subcat: $amount")
+    }
+    builder.appendLine()
+
     builder.appendLine("## LEDGER LOG")
     builder.appendLine("| Date | Type (IN/OUT) | Category | Subcategory | Amount |")
     builder.appendLine("|---|---|---|---|---|")
@@ -841,6 +968,91 @@ fun filterByRange(transactions: List<Transaction>, range: String): List<Transact
             "This Week" -> cal.get(Calendar.WEEK_OF_YEAR) == now.get(Calendar.WEEK_OF_YEAR) && cal.get(Calendar.YEAR) == now.get(Calendar.YEAR)
             "Current Month" -> cal.get(Calendar.MONTH) == now.get(Calendar.MONTH) && cal.get(Calendar.YEAR) == now.get(Calendar.YEAR)
             else -> true
+        }
+    }
+}
+
+@Composable
+fun WalletDropdown(selectedWallet: String, wallets: List<String>, onSelect: (String) -> Unit, modifier: Modifier = Modifier) {
+    var expanded by remember { mutableStateOf(false) }
+    Box(modifier = modifier) {
+        Surface(
+            modifier = Modifier.fillMaxWidth().clickable { expanded = true },
+            color = DarkGray,
+            shape = RoundedCornerShape(8.dp)
+        ) {
+            Text(
+                text = selectedWallet,
+                style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 14.sp, color = White, fontWeight = FontWeight.Bold),
+                modifier = Modifier.padding(12.dp)
+            )
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            val list = if (wallets.isEmpty()) listOf("CASH") else wallets
+            list.forEach { w ->
+                DropdownMenuItem(
+                    text = { Text(w, style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 14.sp, color = TextPrimary)) },
+                    onClick = {
+                        onSelect(w)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun WalletManagerDialog(wallets: List<String>, onAddWallet: (String) -> Unit, onDeleteWallet: (String) -> Unit, onDismiss: () -> Unit) {
+    var newWalletName by remember { mutableStateOf("") }
+    
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = RoundedCornerShape(16.dp), color = MediumGray, modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text("MANAGE WALLETS", style = TextStyle(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = White))
+                
+                LazyColumn(modifier = Modifier.heightIn(max = 200.dp)) {
+                    val list = if (wallets.isEmpty()) listOf("CASH") else wallets
+                    items(list) { w ->
+                        Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text(w, style = TextStyle(fontFamily = FontFamily.SansSerif, color = White))
+                            if (w != "CASH") {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "Delete",
+                                    tint = ProgressRed,
+                                    modifier = Modifier.clickable { onDeleteWallet(w) }.padding(8.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+                
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    BasicTextField(
+                        value = newWalletName,
+                        onValueChange = { newWalletName = it.uppercase() },
+                        singleLine = true,
+                        textStyle = TextStyle(fontFamily = FontFamily.SansSerif, color = TextPrimary, fontSize = 14.sp),
+                        modifier = Modifier.weight(1f).background(ComponentBg, RoundedCornerShape(8.dp)).padding(12.dp),
+                        cursorBrush = SolidColor(TextPrimary),
+                        decorationBox = { inner ->
+                            if (newWalletName.isEmpty()) Text("NEW WALLET", style = TextStyle(fontFamily = FontFamily.SansSerif, color = TextGray))
+                            inner()
+                        }
+                    )
+                    Button(
+                        onClick = {
+                            onAddWallet(newWalletName)
+                            newWalletName = ""
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                        enabled = newWalletName.isNotBlank()
+                    ) {
+                        Text("ADD")
+                    }
+                }
+            }
         }
     }
 }

@@ -1,3 +1,7 @@
+[![Latest Release](https://img.shields.io/github/v/release/USERNAME/REPO?label=Latest%20Version&color=success)](https://github.com/USERNAME/REPO/releases/latest)
+
+[👉 Download Latest APK Here](https://github.com/USERNAME/REPO/releases/tag/latest)
+
 # MalasFinance
 
 MalasFinance is an offline-first financial logger designed for quick data entry and monitoring with a sleek, hacker-style UI.

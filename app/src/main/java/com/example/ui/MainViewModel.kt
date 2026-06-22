@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.data.Transaction
 import com.example.data.TransactionRepository
+import com.example.data.Wallet
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -23,6 +24,13 @@ class MainViewModel(private val repository: TransactionRepository) : ViewModel()
             initialValue = emptyList()
         )
 
+    val wallets: StateFlow<List<Wallet>> = repository.allWallets
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
     private val _amountInput = MutableStateFlow("")
     val amountInput = _amountInput.asStateFlow()
 
@@ -35,11 +43,23 @@ class MainViewModel(private val repository: TransactionRepository) : ViewModel()
     private val _selectedCategory = MutableStateFlow("CORE")
     val selectedCategory = _selectedCategory.asStateFlow()
 
-    private val _transactionType = MutableStateFlow("OUT") // "IN" or "OUT"
+    private val _transactionType = MutableStateFlow("OUT") // "IN", "OUT", "TRANSFER"
     val transactionType = _transactionType.asStateFlow()
 
+    private val _walletSource = MutableStateFlow("CASH")
+    val walletSource = _walletSource.asStateFlow()
+
+    private val _walletDestination = MutableStateFlow<String?>(null)
+    val walletDestination = _walletDestination.asStateFlow()
+
+    private val _feeInput = MutableStateFlow("")
+    val feeInput = _feeInput.asStateFlow()
+
+    private val _editingTransactionId = MutableStateFlow<Int?>(null)
+    val editingTransactionId = _editingTransactionId.asStateFlow()
+
     val frequentLogs: StateFlow<List<Transaction>> = transactions.map { txList ->
-        txList.groupBy { "${it.amount}|${it.category}|${it.subcategory}|${it.type}" }
+        txList.filter { it.type != "TRANSFER" }.groupBy { "${it.amount}|${it.category}|${it.subcategory}|${it.type}" }
             .map { entry -> entry.value.first() to entry.value.size }
             .sortedByDescending { it.second }
             .map { it.first }
@@ -65,10 +85,31 @@ class MainViewModel(private val repository: TransactionRepository) : ViewModel()
         (customForCat + existingForCat).distinct().take(5)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    fun addWallet(name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isNotEmpty()) {
+            viewModelScope.launch {
+                repository.insertWallet(Wallet(trimmed))
+            }
+        }
+    }
+
+    fun deleteWallet(name: String) {
+        viewModelScope.launch {
+            repository.deleteWallet(Wallet(name))
+        }
+    }
+
     fun onAmountChange(value: String) {
         // Only allow numbers
         if (value.all { it.isDigit() }) {
             _amountInput.value = value
+        }
+    }
+    
+    fun onFeeChange(value: String) {
+        if (value.all { it.isDigit() }) {
+            _feeInput.value = value
         }
     }
 
@@ -94,13 +135,45 @@ class MainViewModel(private val repository: TransactionRepository) : ViewModel()
     }
 
     fun onTypeSelect(type: String) {
-        _transactionType.value = type
+        if (_transactionType.value != type) {
+            _transactionType.value = type
+            _subcategoryInput.value = ""
+            if (type == "OUT") {
+                _selectedCategory.value = "CORE"
+            } else if (type == "IN") {
+                _selectedCategory.value = "GAJI"
+            } else if (type == "TRANSFER") {
+                _selectedCategory.value = "TRANSFER"
+                _walletDestination.value = wallets.value.firstOrNull()?.name ?: "BANK"
+                _feeInput.value = ""
+            }
+        }
+    }
+
+    fun onWalletSourceSelect(wallet: String) {
+        _walletSource.value = wallet
+    }
+
+    fun onWalletDestinationSelect(wallet: String) {
+        _walletDestination.value = wallet
     }
 
     fun appendZeros() {
         if (_amountInput.value.isNotEmpty()) {
             _amountInput.value += "000"
         }
+    }
+
+    fun onEditTransaction(transaction: Transaction) {
+        _editingTransactionId.value = transaction.id
+        _transactionType.value = transaction.type
+        _amountInput.value = transaction.amount.toString()
+        _selectedCategory.value = transaction.category
+        _subcategoryInput.value = transaction.subcategory
+        _notesInput.value = transaction.notes ?: ""
+        _walletSource.value = transaction.walletSource
+        _walletDestination.value = transaction.walletDestination
+        _feeInput.value = transaction.fee?.toString() ?: ""
     }
 
     fun applyFrequent(amount: Long, category: String, subcategory: String, type: String) {
@@ -114,18 +187,34 @@ class MainViewModel(private val repository: TransactionRepository) : ViewModel()
     fun saveTransaction() {
         val amount = _amountInput.value.toLongOrNull()
         if (amount != null && amount > 0) {
+            val editId = _editingTransactionId.value
+            val existingTx = if (editId != null) transactions.value.find { it.id == editId } else null
+            
+            val isTransfer = _transactionType.value == "TRANSFER"
+            
             val tx = Transaction(
+                id = editId ?: 0,
                 amount = amount,
                 type = _transactionType.value,
-                category = _selectedCategory.value,
-                subcategory = _subcategoryInput.value.trim(),
-                notes = _notesInput.value.trim().takeIf { it.isNotEmpty() }
+                category = if (isTransfer) "TRANSFER" else _selectedCategory.value,
+                subcategory = if (isTransfer) "" else _subcategoryInput.value.trim(),
+                notes = _notesInput.value.trim().takeIf { it.isNotEmpty() },
+                timestamp = existingTx?.timestamp ?: System.currentTimeMillis(),
+                walletSource = _walletSource.value,
+                walletDestination = if (isTransfer) _walletDestination.value else null,
+                fee = if (isTransfer) _feeInput.value.toLongOrNull() else null
             )
             viewModelScope.launch {
-                repository.insert(tx)
+                if (editId != null) {
+                    repository.update(tx)
+                    _editingTransactionId.value = null
+                } else {
+                    repository.insert(tx)
+                }
                 _amountInput.value = ""
                 _subcategoryInput.value = ""
                 _notesInput.value = ""
+                _feeInput.value = ""
             }
         }
     }
