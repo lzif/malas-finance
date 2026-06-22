@@ -21,7 +21,9 @@ jobs:
           distribution: 'temurin'
 
       - name: Build Release APK
-        run: ./gradlew assembleRelease
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleRelease
 
       - name: Rename APK and Clobber Latest Release
         env:
