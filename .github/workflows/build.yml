@@ -24,6 +24,9 @@ jobs:
         run: |
           gradle wrapper --gradle-version 9.3.1
 
+      - name: Decode Keystore
+        run: base64 -d app/malas.keystore.base64 > app/malas.keystore
+
       - name: Build Release APK
         run: |
           chmod +x ./gradlew
