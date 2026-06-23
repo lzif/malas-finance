@@ -30,6 +30,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
@@ -173,60 +174,82 @@ fun EntryScreen(viewModel: MainViewModel) {
     ) {
         HeaderSection(totalInflow, totalOutflow, balance, transactions, context)
         
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(16.dp))
         
-        Column(modifier = Modifier.weight(1f).fillMaxWidth()) {
-            Text("QUICK LOGS", style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, color = TextGray))
-            Spacer(modifier = Modifier.height(8.dp))
-            LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(transactions) { tx ->
-                    val dateFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
-                    val timeStr = dateFormat.format(Date(tx.timestamp))
-                    
-                    val displayCategory = if (tx.category == "OPS") "OPER" else tx.category
-                    val color = when (displayCategory) {
-                        "CORE" -> CoreColor
-                        "OPER" -> OpsColor
-                        "HOBBY" -> HobbyColor
-                        "VAULT" -> VaultColor
-                        else -> TextPrimary
-                    }
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = White,
-                        tonalElevation = 2.dp,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
+        Surface(
+            modifier = Modifier.weight(1f).fillMaxWidth().shadow(
+                elevation = 8.dp,
+                shape = RoundedCornerShape(20.dp),
+                spotColor = Color.LightGray,
+                ambientColor = Color.LightGray
+            ),
+            shape = RoundedCornerShape(20.dp),
+            color = White
+        ) {
+            Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+                Text("QUICK LOGS", style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, color = TextGray))
+                Spacer(modifier = Modifier.height(8.dp))
+                LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(transactions) { tx ->
+                        val dateFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
+                        val timeStr = dateFormat.format(Date(tx.timestamp))
+                        
+                        val displayCategory = if (tx.category == "OPS") "OPER" else tx.category
+                        val color = when (displayCategory) {
+                            "CORE" -> CoreColor
+                            "OPER" -> OpsColor
+                            "HOBBY" -> HobbyColor
+                            "VAULT" -> VaultColor
+                            else -> TextPrimary
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(20.dp),
+                            color = ComponentBg,
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text(timeStr, style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 10.sp, color = TextGray))
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Surface(color = color.copy(alpha = 0.1f), shape = RoundedCornerShape(percent = 50)) {
-                                Text(displayCategory, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = color))
-                            }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                val subcatText = tx.subcategory.ifBlank { "NO SUBCATEGORY" }
-                                Text(subcatText, style = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = TextPrimary), maxLines = 1)
-                                if (!tx.notes.isNullOrEmpty()) {
-                                    Text(tx.notes, style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 10.sp, color = TextGray), maxLines = 1)
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(timeStr, style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 10.sp, color = TextGray))
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Surface(color = color.copy(alpha = 0.15f), shape = RoundedCornerShape(percent = 50)) {
+                                    Text(displayCategory, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = color))
                                 }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    val subcatText = tx.subcategory.ifBlank { "NO SUBCATEGORY" }
+                                    Text(subcatText, style = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = TextPrimary), maxLines = 1)
+                                    if (!tx.notes.isNullOrEmpty()) {
+                                        Text(tx.notes, style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 10.sp, color = TextGray), maxLines = 1)
+                                    }
+                                }
+                                Text(
+                                    text = formatCurrency(tx.amount),
+                                    style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 14.sp, fontWeight = FontWeight.Black, color = if (tx.type == "IN") VaultColor else TextPrimary),
+                                    textAlign = TextAlign.End
+                                )
                             }
-                            Text(
-                                text = formatCurrency(tx.amount),
-                                style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 14.sp, fontWeight = FontWeight.Black, color = if (tx.type == "IN") VaultColor else TextPrimary),
-                                textAlign = TextAlign.End
-                            )
                         }
                     }
                 }
             }
         }
         
-        MidSection(
-            modifier = Modifier.fillMaxWidth(),
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Surface(
+            modifier = Modifier.fillMaxWidth().shadow(
+                elevation = 8.dp,
+                shape = RoundedCornerShape(20.dp),
+                spotColor = Color.LightGray,
+                ambientColor = Color.LightGray
+            ),
+            shape = RoundedCornerShape(20.dp),
+            color = White
+        ) {
+            MidSection(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
             amountInput = amountInput,
             onAmountChange = viewModel::onAmountChange,
             subcategoryInput = subcategoryInput,
@@ -254,6 +277,7 @@ fun EntryScreen(viewModel: MainViewModel) {
             onAppendZeros = viewModel::appendZeros,
             onApplyFrequent = viewModel::applyFrequent
         )
+        }
     }
 }
 
@@ -290,10 +314,14 @@ fun HeaderSection(inflow: Long, outflow: Long, balance: Long, transactions: List
     }
 
     Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        color = White,
-        tonalElevation = 4.dp
+        modifier = Modifier.fillMaxWidth().shadow(
+            elevation = 8.dp,
+            shape = RoundedCornerShape(20.dp),
+            spotColor = Color.LightGray,
+            ambientColor = Color.LightGray
+        ),
+        shape = RoundedCornerShape(20.dp),
+        color = White
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(20.dp)
@@ -304,7 +332,7 @@ fun HeaderSection(inflow: Long, outflow: Long, balance: Long, transactions: List
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "MALAS_FINANCE_v1.3.0",
+                    "MALAS_FINANCE_v1.4.0",
                     style = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp, letterSpacing = 1.sp, color = TextGray)
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -454,45 +482,59 @@ fun MidSection(
                 Text("TYPE: ", style = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 10.sp, color = TextGray, letterSpacing = 2.sp))
                 val types = listOf("OUT" to "EXPENSE", "IN" to "INCOME", "TRANSFER" to "TRANSFER")
                 types.forEach { (typeKey, textLabel) ->
-                    Text(
-                        text = textLabel,
-                        color = if (transactionType == typeKey) (if (typeKey == "IN") VaultColor else if (typeKey == "OUT") CoreColor else PrimaryBlue) else TextGray,
-                        style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 12.sp, fontWeight = if (transactionType == typeKey) FontWeight.ExtraBold else FontWeight.Normal, letterSpacing = 1.sp),
-                        modifier = Modifier.clickable { onTypeSelect(typeKey) }
-                    )
+                    val isSelected = transactionType == typeKey
+                    val color = if (isSelected) (if (typeKey == "IN") VaultColor else if (typeKey == "OUT") CoreColor else PrimaryBlue) else TextGray
+                    Surface(
+                        modifier = Modifier.clickable { onTypeSelect(typeKey) },
+                        shape = CircleShape,
+                        color = if (isSelected) color.copy(alpha = 0.15f) else Color.Transparent
+                    ) {
+                        Text(
+                            text = textLabel,
+                            color = color,
+                            style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 12.sp, fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Normal, letterSpacing = 1.sp),
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                        )
+                    }
                 }
             }
             Spacer(modifier = Modifier.height(8.dp))
             
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                val formattedAmount = amountInput.toLongOrNull()?.let { formatCurrency(it).replace("IDR ", "") } ?: ""
-                BasicTextField(
-                    value = formattedAmount,
-                    onValueChange = { newVal ->
-                        val plainDigits = newVal.replace(".", "").replace(",", "")
-                        onAmountChange(plainDigits)
-                    },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 48.sp, fontWeight = FontWeight.Black, color = TextPrimary, textAlign = TextAlign.Center),
-                    modifier = Modifier.weight(1f).testTag("amount_input"),
-                    cursorBrush = SolidColor(TextPrimary),
-                    decorationBox = { innerTextField ->
-                        if (amountInput.isEmpty()) {
-                            Text("0", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 48.sp, fontWeight = FontWeight.Black, color = MediumGray, textAlign = TextAlign.Center), modifier = Modifier.fillMaxWidth())
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    color = ComponentBg,
+                    shape = RoundedCornerShape(20.dp)
+                ) {
+                    val formattedAmount = amountInput.toLongOrNull()?.let { formatCurrency(it).replace("IDR ", "") } ?: ""
+                    BasicTextField(
+                        value = formattedAmount,
+                        onValueChange = { newVal ->
+                            val plainDigits = newVal.replace(".", "").replace(",", "")
+                            onAmountChange(plainDigits)
+                        },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 36.sp, fontWeight = FontWeight.Black, color = TextPrimary, textAlign = TextAlign.Center),
+                        modifier = Modifier.fillMaxWidth().padding(12.dp).testTag("amount_input"),
+                        cursorBrush = SolidColor(TextPrimary),
+                        decorationBox = { innerTextField ->
+                            if (amountInput.isEmpty()) {
+                                Text("0", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 36.sp, fontWeight = FontWeight.Black, color = TextSecondary, textAlign = TextAlign.Center), modifier = Modifier.fillMaxWidth())
+                            }
+                            innerTextField()
                         }
-                        innerTextField()
-                    }
-                )
+                    )
+                }
                 
                 Surface(
                     modifier = Modifier.clickable { onAppendZeros() },
-                    shape = RoundedCornerShape(16.dp),
+                    shape = RoundedCornerShape(20.dp),
                     color = ComponentBg
                 ) {
                     Text(
                         text = "000",
-                        style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 24.sp, color = TextPrimary, fontWeight = FontWeight.Bold),
+                        style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 20.sp, color = TextPrimary, fontWeight = FontWeight.Bold),
                         modifier = Modifier.padding(16.dp)
                     )
                 }
@@ -531,22 +573,28 @@ fun MidSection(
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("FEE:", style = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 10.sp, color = TextGray))
                 Spacer(modifier = Modifier.width(8.dp))
-                val formattedFee = feeInput.toLongOrNull()?.let { formatCurrency(it).replace("IDR ", "") } ?: ""
-                BasicTextField(
-                    value = formattedFee,
-                    onValueChange = { newVal -> onFeeChange(newVal.replace(".", "").replace(",", "")) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = TextPrimary),
-                    modifier = Modifier.weight(1f).testTag("fee_input"),
-                    cursorBrush = SolidColor(TextPrimary),
-                    decorationBox = { innerTextField ->
-                        if (feeInput.isEmpty()) {
-                            Text("0", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MediumGray))
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    color = ComponentBg,
+                    shape = RoundedCornerShape(percent = 50)
+                ) {
+                    val formattedFee = feeInput.toLongOrNull()?.let { formatCurrency(it).replace("IDR ", "") } ?: ""
+                    BasicTextField(
+                        value = formattedFee,
+                        onValueChange = { newVal -> onFeeChange(newVal.replace(".", "").replace(",", "")) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextPrimary),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp).testTag("fee_input"),
+                        cursorBrush = SolidColor(TextPrimary),
+                        decorationBox = { innerTextField ->
+                            if (feeInput.isEmpty()) {
+                                Text("0", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = TextSecondary))
+                            }
+                            innerTextField()
                         }
-                        innerTextField()
-                    }
-                )
+                    )
+                }
             }
         }
 
@@ -631,30 +679,35 @@ fun MidSection(
         }
 
         // Notes (Optional)
-        BasicTextField(
-            value = notesInput ?: "",
-            onValueChange = onNotesChange,
-            singleLine = true,
-            textStyle = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 12.sp, color = TextPrimary),
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp).testTag("notes_input"),
-            cursorBrush = SolidColor(TextPrimary),
-            decorationBox = { innerTextField ->
-                Box(contentAlignment = Alignment.BottomStart) {
-                    if (notesInput.isNullOrEmpty()) {
-                        Text("Notes (Optional)", style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 12.sp, color = TextGray))
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = ComponentBg,
+            shape = RoundedCornerShape(20.dp)
+        ) {
+            BasicTextField(
+                value = notesInput ?: "",
+                onValueChange = onNotesChange,
+                singleLine = true,
+                textStyle = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 14.sp, color = TextPrimary),
+                modifier = Modifier.fillMaxWidth().padding(16.dp).testTag("notes_input"),
+                cursorBrush = SolidColor(TextPrimary),
+                decorationBox = { innerTextField ->
+                    Box(contentAlignment = Alignment.CenterStart) {
+                        if (notesInput.isNullOrEmpty()) {
+                            Text("Notes (Optional)", style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 14.sp, color = TextSecondary))
+                        }
+                        innerTextField()
                     }
-                    innerTextField()
-                    Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(MediumGray))
                 }
-            }
-        )
+            )
+        }
 
         // SAVE BUTTON
         Button(
             onClick = onSave,
             modifier = Modifier.fillMaxWidth().height(56.dp).testTag("save_button"),
             colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue, contentColor = White),
-            shape = RoundedCornerShape(16.dp),
+            shape = CircleShape,
             contentPadding = PaddingValues(0.dp),
             enabled = amountInput.isNotBlank()
         ) {
@@ -687,7 +740,7 @@ fun CategoryGridButton(text: String, isSelected: Boolean, color: Color, modifier
             .clickable(onClick = onClick),
         color = if (isSelected) White else ComponentBg,
         border = BorderStroke(if (isSelected) 2.dp else 1.dp, if (isSelected) color else color.copy(alpha = 0.2f)),
-        shape = RoundedCornerShape(16.dp)
+        shape = CircleShape
     ) {
         Row(
             modifier = Modifier.fillMaxSize(),
@@ -748,8 +801,8 @@ fun BottomSection(transactions: List<Transaction>, onDelete: (Int) -> Unit, onEd
                     backgroundContent = {
                         Surface(
                             modifier = Modifier.fillMaxSize(),
-                            shape = RoundedCornerShape(16.dp),
-                            color = ProgressRed
+                            shape = RoundedCornerShape(20.dp),
+                            color = SoftRed
                         ) {
                             Box(
                                 modifier = Modifier.fillMaxSize().padding(end = 16.dp),
@@ -769,7 +822,7 @@ fun BottomSection(transactions: List<Transaction>, onDelete: (Int) -> Unit, onEd
                                     onLongPress = { onEdit(tx) }
                                 )
                             },
-                        shape = RoundedCornerShape(16.dp),
+                        shape = RoundedCornerShape(20.dp),
                         color = White,
                         tonalElevation = 2.dp
                     ) {
@@ -978,13 +1031,14 @@ fun WalletDropdown(selectedWallet: String, wallets: List<String>, onSelect: (Str
     Box(modifier = modifier) {
         Surface(
             modifier = Modifier.fillMaxWidth().clickable { expanded = true },
-            color = DarkGray,
-            shape = RoundedCornerShape(8.dp)
+            color = ComponentBg,
+            shape = RoundedCornerShape(percent = 50)
         ) {
             Text(
                 text = selectedWallet,
-                style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 14.sp, color = White, fontWeight = FontWeight.Bold),
-                modifier = Modifier.padding(12.dp)
+                style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 14.sp, color = TextPrimary, fontWeight = FontWeight.Bold),
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                textAlign = TextAlign.Center
             )
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -1020,7 +1074,7 @@ fun WalletManagerDialog(wallets: List<String>, onAddWallet: (String) -> Unit, on
                                 Icon(
                                     imageVector = Icons.Default.Delete,
                                     contentDescription = "Delete",
-                                    tint = ProgressRed,
+                                    tint = SoftRed,
                                     modifier = Modifier.clickable { onDeleteWallet(w) }.padding(8.dp)
                                 )
                             }

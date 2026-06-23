@@ -34,21 +34,21 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           OLD_APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
-          
+
           VERSION_NAME=$(grep 'versionName' app/build.gradle.kts | awk '{print $3}' | tr -d '"' | tr -d '=' | tr -d ' ')
           if [ -z "$VERSION_NAME" ]; then VERSION_NAME="1.0"; fi
-          
+
           NEW_APK_NAME="MalasFinance-v${VERSION_NAME}-b${{ github.run_number }}.apk"
           NEW_APK_PATH="$(dirname "$OLD_APK_PATH")/$NEW_APK_NAME"
           mv "$OLD_APK_PATH" "$NEW_APK_PATH"
-          
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -f latest
           git push -f origin latest
-          
+
           # 1. Hapus release 'latest' yang lama (kalau ada) biar nggak error pas create
           gh release delete latest -y || true
-          
+
           # 2. Bikin release 'latest' yang baru (tanpa --clobber)
           gh release create latest "$NEW_APK_PATH" --title "Latest Auto-Build" --notes "Build v${VERSION_NAME} (Run #${{ github.run_number }})."

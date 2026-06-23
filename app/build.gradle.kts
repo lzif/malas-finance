@@ -46,7 +46,6 @@ android {
       signingConfig = signingConfigs.getByName("release") // Pakai signature release yang asli
     }
   }
-
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11
     targetCompatibility = JavaVersion.VERSION_11
