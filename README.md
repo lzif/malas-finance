@@ -1,6 +1,6 @@
-[![Latest Release](https://img.shields.io/github/v/release/USERNAME/REPO?label=Latest%20Version&color=success)](https://github.com/USERNAME/REPO/releases/latest)
+[![Latest Release](https://img.shields.io/github/v/release/lzif/malas-finance?label=Latest%20Version&color=success)](https://github.com/lzif/malas-finance/releases/latest)
 
-[👉 Download Latest APK Here](https://github.com/USERNAME/REPO/releases/tag/latest)
+[👉 Download Latest APK Here](https://github.com/lzif/malas-finance/releases/tag/latest)
 
 # MalasFinance
 
