@@ -55,6 +55,7 @@ jobs:
           VERSION_NAME=$(grep 'versionName' app/build.gradle.kts | awk '{print $3}' | tr -d '"' | tr -d '=' | tr -d ' ')
           if [ -z "$VERSION_NAME" ]; then VERSION_NAME="1.0"; fi
 
-          # ponytail: keep existing latest tag; avoids GITHUB_TOKEN workflow-scope tag push failure.
+          # ponytail: keep existing latest tag; replace APK assets only, no tag/release churn.
+          gh release view latest --json assets --jq '.assets[].name' | grep '\.apk$' | xargs -r -n 1 gh release delete-asset latest -y
           gh release upload latest "$NEW_APK_PATH" --clobber || \
             gh release create latest "$NEW_APK_PATH" --title "Latest Auto-Build" --notes "Build v${VERSION_NAME} (Run #${{ github.run_number }})."
