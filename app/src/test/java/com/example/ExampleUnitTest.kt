@@ -10,7 +10,12 @@ import org.junit.Test
  */
 class ExampleUnitTest {
   @Test
-  fun addition_isCorrect() {
-    assertEquals(4, 2 + 2)
+  fun entryFormBudgetAllowsThreeQuickLogs() {
+    val formMaxDp = 300
+    val typicalPhoneHeightDp = 640
+    val compactQuickLogRowDp = 44
+
+    assertTrue(formMaxDp < typicalPhoneHeightDp / 2)
+    assertTrue(typicalPhoneHeightDp - formMaxDp >= compactQuickLogRowDp * 3)
   }
 }

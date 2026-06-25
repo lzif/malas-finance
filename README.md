@@ -4,17 +4,30 @@
 [![Build](https://img.shields.io/github/actions/workflow/status/lzif/malas-finance/build.yml?branch=main&label=latest%20build)](https://github.com/lzif/malas-finance/actions/workflows/build.yml)
 [![Latest Release](https://img.shields.io/github/v/release/lzif/malas-finance?label=latest%20release&color=success)](https://github.com/lzif/malas-finance/releases/latest)
 
-[Download latest APK](https://github.com/lzif/malas-finance/releases/tag/latest)
+[Download latest versioned APK](https://github.com/lzif/malas-finance/releases/latest)
 
-MalasFinance is an offline-first financial logger designed for quick data entry and monitoring with a sleek, hacker-style UI.
+MalasFinance is an offline-first personal finance logger designed for fast thumb-first entry, local-only storage, and safer recovery from mistakes.
 
 ## Features
-- **Quick Logging:** Ultra-fast transaction logging specifically tailored for quick thumb reach.
-- **Categorization:** Separate your expenses across CORE, OPER, HOBBY, and VAULT.
-- **Visual Analytics:** Breakdown your expenditures by category and observe real-time balance calculations.
-- **Local Persistence:** Your data stays on your device using a local Room Database.
-- **Export Capabilities:** Easily export logs using a clipboard format.
+- **Quick Logging:** Fast transaction entry for income, expense, and transfers.
+- **Categorization:** Track spending across CORE, OPER, HOBBY, and VAULT.
+- **Local Persistence:** Data stays on device in a Room database; Android cloud backup is disabled.
+- **Safer Deletion:** Entries move to trash first, can be restored, and require confirmation before permanent delete.
+- **Date Editing:** Transaction date/time can be adjusted using `yyyy-MM-dd HH:mm`.
+- **Export / Restore:** Markdown reports plus JSON backup export/import for restoring app data.
+
+## Releases
+GitHub Actions builds signed release APKs for `arm64-v8a` from APK-affecting changes on `main`.
+
+Release format:
+- Tag: `v<version>-b<build>`
+- Title: `MalasFinance v<version> (Build <build>)`
+- APK: `MalasFinance-v<version>-b<build>.apk`
+- Notes: version code, commit SHA, and changelog since previous version tag.
+
+Example APK filename: `MalasFinance-v1.5.0-b15.apk`.
+This keeps downloads unique, so repeated downloads do not become `MalasFinance (1).apk`.
 
 ## CI/CD
-GitHub Actions builds and uploads a release APK for `arm64-v8a` whenever code is pushed to `main`.
-The build badge shows latest `main` build status, including failures.
+The build workflow runs tests, assembles the release APK, and publishes a versioned GitHub release.
+README-only and other non-APK changes do not trigger builds.

@@ -1,5 +1,7 @@
 package com.example.ui
 
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.ContentValues
@@ -21,6 +23,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
@@ -174,26 +177,26 @@ fun EntryScreen(viewModel: MainViewModel) {
             .pointerInput(Unit) {
                 detectTapGestures(onTap = { focusManager.clearFocus() })
             }
-            .padding(16.dp)
+            .padding(6.dp)
     ) {
         HeaderSection(totalInflow, totalOutflow, balance, transactions + deletedTransactions, context, viewModel::importTransactions)
         
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(6.dp))
         
         Surface(
             modifier = Modifier.weight(1f).fillMaxWidth().shadow(
-                elevation = 8.dp,
-                shape = RoundedCornerShape(20.dp),
+                elevation = 3.dp,
+                shape = RoundedCornerShape(12.dp),
                 spotColor = Color.LightGray,
                 ambientColor = Color.LightGray
             ),
-            shape = RoundedCornerShape(20.dp),
+            shape = RoundedCornerShape(12.dp),
             color = White
         ) {
-            Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-                Text("QUICK LOGS", style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, color = TextGray))
-                Spacer(modifier = Modifier.height(8.dp))
-                LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(modifier = Modifier.fillMaxSize().padding(6.dp)) {
+                Text("QUICK LOGS", style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, color = TextGray))
+                Spacer(modifier = Modifier.height(4.dp))
+                LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     items(transactions) { tx ->
                         val dateFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
                         val timeStr = dateFormat.format(Date(tx.timestamp))
@@ -212,15 +215,15 @@ fun EntryScreen(viewModel: MainViewModel) {
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(
-                                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                modifier = Modifier.fillMaxWidth().padding(6.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(timeStr, style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 10.sp, color = TextGray))
-                                Spacer(modifier = Modifier.width(12.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
                                 Surface(color = color.copy(alpha = 0.15f), shape = RoundedCornerShape(percent = 50)) {
                                     Text(displayCategory, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = color))
                                 }
-                                Spacer(modifier = Modifier.width(12.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     val subcatText = tx.subcategory.ifBlank { "NO SUBCATEGORY" }
                                     Text(subcatText, style = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = TextPrimary), maxLines = 1)
@@ -240,20 +243,20 @@ fun EntryScreen(viewModel: MainViewModel) {
             }
         }
         
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
         Surface(
             modifier = Modifier.fillMaxWidth().shadow(
-                elevation = 8.dp,
-                shape = RoundedCornerShape(20.dp),
+                elevation = 3.dp,
+                shape = RoundedCornerShape(12.dp),
                 spotColor = Color.LightGray,
                 ambientColor = Color.LightGray
             ),
-            shape = RoundedCornerShape(20.dp),
+            shape = RoundedCornerShape(12.dp),
             color = White
         ) {
             MidSection(
-                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp).verticalScroll(rememberScrollState()).padding(6.dp),
             amountInput = amountInput,
             onAmountChange = viewModel::onAmountChange,
             subcategoryInput = subcategoryInput,
@@ -326,16 +329,16 @@ fun HeaderSection(inflow: Long, outflow: Long, balance: Long, transactions: List
 
     Surface(
         modifier = Modifier.fillMaxWidth().shadow(
-            elevation = 8.dp,
-            shape = RoundedCornerShape(20.dp),
+            elevation = 3.dp,
+            shape = RoundedCornerShape(12.dp),
             spotColor = Color.LightGray,
             ambientColor = Color.LightGray
         ),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(12.dp),
         color = White
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(20.dp)
+            modifier = Modifier.fillMaxWidth().padding(8.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -343,7 +346,7 @@ fun HeaderSection(inflow: Long, outflow: Long, balance: Long, transactions: List
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "MALAS_FINANCE_v1.4.0",
+                    "MALAS_FINANCE_v1.5.0",
                     style = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp, letterSpacing = 1.sp, color = TextGray)
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -357,12 +360,12 @@ fun HeaderSection(inflow: Long, outflow: Long, balance: Long, transactions: List
                 }
             }
         
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(6.dp))
         
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 16.dp),
+                .padding(bottom = 6.dp),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Column(modifier = Modifier.weight(1f)) {
@@ -380,7 +383,7 @@ fun HeaderSection(inflow: Long, outflow: Long, balance: Long, transactions: List
         }
 
         HorizontalDivider(color = MediumGray, thickness = 1.dp)
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
         // Category percentages
         val outTxs = transactions.filter { it.type == "OUT" }
@@ -467,12 +470,12 @@ fun MidSection(
 
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         // Quick Action Chips
         Row(
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             frequentLogs.forEach { tx ->
                 val catDisp = if (tx.category == "OPS") "OPER" else tx.category
@@ -486,7 +489,7 @@ fun MidSection(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("TYPE: ", style = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 10.sp, color = TextGray, letterSpacing = 2.sp))
                 val types = listOf("OUT" to "EXPENSE", "IN" to "INCOME", "TRANSFER" to "TRANSFER")
                 types.forEach { (typeKey, textLabel) ->
@@ -501,14 +504,14 @@ fun MidSection(
                             text = textLabel,
                             color = color,
                             style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 12.sp, fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Normal, letterSpacing = 1.sp),
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                         )
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(4.dp))
             
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Surface(
                     modifier = Modifier.weight(1f),
                     color = ComponentBg,
@@ -523,12 +526,12 @@ fun MidSection(
                         },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
-                        textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 36.sp, fontWeight = FontWeight.Black, color = TextPrimary, textAlign = TextAlign.Center),
-                        modifier = Modifier.fillMaxWidth().padding(12.dp).testTag("amount_input"),
+                        textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 28.sp, fontWeight = FontWeight.Black, color = TextPrimary, textAlign = TextAlign.Center),
+                        modifier = Modifier.fillMaxWidth().padding(8.dp).testTag("amount_input"),
                         cursorBrush = SolidColor(TextPrimary),
                         decorationBox = { innerTextField ->
                             if (amountInput.isEmpty()) {
-                                Text("0", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 36.sp, fontWeight = FontWeight.Black, color = TextSecondary, textAlign = TextAlign.Center), modifier = Modifier.fillMaxWidth())
+                                Text("0", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 28.sp, fontWeight = FontWeight.Black, color = TextSecondary, textAlign = TextAlign.Center), modifier = Modifier.fillMaxWidth())
                             }
                             innerTextField()
                         }
@@ -543,7 +546,7 @@ fun MidSection(
                     Text(
                         text = "000",
                         style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 20.sp, color = TextPrimary, fontWeight = FontWeight.Bold),
-                        modifier = Modifier.padding(16.dp)
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
                     )
                 }
             }
@@ -606,23 +609,19 @@ fun MidSection(
             }
         }
 
-        // Categories Grid (2x2)
+        // Categories stay one row to keep entry form thumb-height.
         if (transactionType != "TRANSFER") {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 val cat1 = if (transactionType == "IN") "GAJI" else "CORE"
                 val cat2 = if (transactionType == "IN") "KEBUN" else "OPER"
                 val cat2Value = if (transactionType == "IN") "KEBUN" else "OPS"
                 val cat3 = if (transactionType == "IN") "BONUS" else "HOBBY"
                 val cat4 = if (transactionType == "IN") "LAINNYA" else "VAULT"
 
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    CategoryGridButton(cat1, selectedCategory == cat1, CoreColor, modifier = Modifier.weight(1f)) { onCategorySelect(cat1) }
-                    CategoryGridButton(cat2, selectedCategory == cat2Value, OpsColor, modifier = Modifier.weight(1f)) { onCategorySelect(cat2Value) }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    CategoryGridButton(cat3, selectedCategory == cat3, HobbyColor, modifier = Modifier.weight(1f)) { onCategorySelect(cat3) }
-                    CategoryGridButton(cat4, selectedCategory == cat4, VaultColor, modifier = Modifier.weight(1f)) { onCategorySelect(cat4) }
-                }
+                CategoryGridButton(cat1, selectedCategory == cat1, CoreColor, modifier = Modifier.weight(1f)) { onCategorySelect(cat1) }
+                CategoryGridButton(cat2, selectedCategory == cat2Value, OpsColor, modifier = Modifier.weight(1f)) { onCategorySelect(cat2Value) }
+                CategoryGridButton(cat3, selectedCategory == cat3, HobbyColor, modifier = Modifier.weight(1f)) { onCategorySelect(cat3) }
+                CategoryGridButton(cat4, selectedCategory == cat4, VaultColor, modifier = Modifier.weight(1f)) { onCategorySelect(cat4) }
             }
 
             // Subcategory / Tags
@@ -641,7 +640,7 @@ fun MidSection(
                         Text(
                             text = subcat,
                             style = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = if (isSelected) White else TextGray),
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                         )
                     }
                 }
@@ -686,29 +685,7 @@ fun MidSection(
             }
         }
 
-        // Date/time
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = ComponentBg,
-            shape = RoundedCornerShape(20.dp)
-        ) {
-            BasicTextField(
-                value = timestampInput,
-                onValueChange = onTimestampChange,
-                singleLine = true,
-                textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 14.sp, color = TextPrimary),
-                modifier = Modifier.fillMaxWidth().padding(16.dp).testTag("timestamp_input"),
-                cursorBrush = SolidColor(TextPrimary),
-                decorationBox = { innerTextField ->
-                    Box(contentAlignment = Alignment.CenterStart) {
-                        if (timestampInput.isEmpty()) {
-                            Text("yyyy-MM-dd HH:mm", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 14.sp, color = TextSecondary))
-                        }
-                        innerTextField()
-                    }
-                }
-            )
-        }
+        DateTimePickerRow(timestampInput = timestampInput, onTimestampChange = onTimestampChange)
 
         // Notes (Optional)
         Surface(
@@ -721,7 +698,7 @@ fun MidSection(
                 onValueChange = onNotesChange,
                 singleLine = true,
                 textStyle = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 14.sp, color = TextPrimary),
-                modifier = Modifier.fillMaxWidth().padding(16.dp).testTag("notes_input"),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp).testTag("notes_input"),
                 cursorBrush = SolidColor(TextPrimary),
                 decorationBox = { innerTextField ->
                     Box(contentAlignment = Alignment.CenterStart) {
@@ -737,14 +714,60 @@ fun MidSection(
         // SAVE BUTTON
         Button(
             onClick = onSave,
-            modifier = Modifier.fillMaxWidth().height(56.dp).testTag("save_button"),
+            modifier = Modifier.fillMaxWidth().height(44.dp).testTag("save_button"),
             colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue, contentColor = White),
             shape = CircleShape,
             contentPadding = PaddingValues(0.dp),
             enabled = amountInput.isNotBlank()
         ) {
-            Text(if (editingTransactionId != null) "UPDATE" else "SUBMIT", style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold))
+            Text(if (editingTransactionId != null) "UPDATE" else "SUBMIT", style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold))
         }
+    }
+}
+
+@Composable
+fun DateTimePickerRow(timestampInput: String, onTimestampChange: (String) -> Unit) {
+    val context = LocalContext.current
+    val format = remember { SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).apply { isLenient = false } }
+    val label = timestampInput.ifBlank { format.format(Date(System.currentTimeMillis())) }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth().clickable {
+            val cal = Calendar.getInstance().apply {
+                timeInMillis = runCatching { format.parse(label)?.time }.getOrNull() ?: System.currentTimeMillis()
+            }
+            DatePickerDialog(
+                context,
+                { _, year, month, day ->
+                    cal.set(Calendar.YEAR, year)
+                    cal.set(Calendar.MONTH, month)
+                    cal.set(Calendar.DAY_OF_MONTH, day)
+                    TimePickerDialog(
+                        context,
+                        { _, hour, minute ->
+                            cal.set(Calendar.HOUR_OF_DAY, hour)
+                            cal.set(Calendar.MINUTE, minute)
+                            cal.set(Calendar.SECOND, 0)
+                            onTimestampChange(format.format(cal.time))
+                        },
+                        cal.get(Calendar.HOUR_OF_DAY),
+                        cal.get(Calendar.MINUTE),
+                        true
+                    ).show()
+                },
+                cal.get(Calendar.YEAR),
+                cal.get(Calendar.MONTH),
+                cal.get(Calendar.DAY_OF_MONTH)
+            ).show()
+        }.testTag("timestamp_input"),
+        color = ComponentBg,
+        shape = RoundedCornerShape(20.dp)
+    ) {
+        Text(
+            text = label,
+            style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = TextPrimary),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
+        )
     }
 }
 
@@ -759,7 +782,7 @@ fun QuickActionChip(text: String, isDynamic: Boolean = false, onClick: () -> Uni
         Text(
             text = text,
             style = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Medium, fontSize = 11.sp, color = if (isDynamic) OpsColor else TextPrimary),
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
         )
     }
 }
@@ -768,7 +791,7 @@ fun QuickActionChip(text: String, isDynamic: Boolean = false, onClick: () -> Uni
 fun CategoryGridButton(text: String, isSelected: Boolean, color: Color, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Surface(
         modifier = modifier
-            .height(56.dp)
+            .height(34.dp)
             .clickable(onClick = onClick),
         color = if (isSelected) White else ComponentBg,
         border = BorderStroke(if (isSelected) 2.dp else 1.dp, if (isSelected) color else color.copy(alpha = 0.2f)),
@@ -779,11 +802,11 @@ fun CategoryGridButton(text: String, isSelected: Boolean, color: Color, modifier
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Surface(modifier = Modifier.size(24.dp), shape = CircleShape, color = color.copy(alpha = 0.1f)) {
-                Box(modifier = Modifier.fillMaxSize().padding(6.dp).background(color, CircleShape))
+            Surface(modifier = Modifier.size(12.dp), shape = CircleShape, color = color.copy(alpha = 0.1f)) {
+                Box(modifier = Modifier.fillMaxSize().padding(3.dp).background(color, CircleShape))
             }
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(text, style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (isSelected) TextPrimary else TextGray))
+            Spacer(modifier = Modifier.width(3.dp))
+            Text(text, style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = if (isSelected) TextPrimary else TextGray), maxLines = 1)
         }
     }
 }
