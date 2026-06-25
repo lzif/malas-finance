@@ -4,10 +4,11 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.ContentValues
 import android.content.Context
-import android.content.Intent
 import android.os.Environment
 import android.provider.MediaStore
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -23,7 +24,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
@@ -54,6 +54,8 @@ import androidx.compose.material.icons.filled.List
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.Transaction
 import com.example.ui.theme.*
+import org.json.JSONArray
+import org.json.JSONObject
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
@@ -140,6 +142,7 @@ fun MainScreen(viewModel: MainViewModel) {
 @Composable
 fun EntryScreen(viewModel: MainViewModel) {
     val transactions by viewModel.transactions.collectAsStateWithLifecycle()
+    val deletedTransactions by viewModel.deletedTransactions.collectAsStateWithLifecycle()
     val amountInput by viewModel.amountInput.collectAsStateWithLifecycle()
     val notesInput by viewModel.notesInput.collectAsStateWithLifecycle()
     val selectedCategory by viewModel.selectedCategory.collectAsStateWithLifecycle()
@@ -153,6 +156,7 @@ fun EntryScreen(viewModel: MainViewModel) {
     val walletSource by viewModel.walletSource.collectAsStateWithLifecycle()
     val walletDestination by viewModel.walletDestination.collectAsStateWithLifecycle()
     val feeInput by viewModel.feeInput.collectAsStateWithLifecycle()
+    val timestampInput by viewModel.timestampInput.collectAsStateWithLifecycle()
 
     val editingTransactionId by viewModel.editingTransactionId.collectAsStateWithLifecycle()
 
@@ -172,7 +176,7 @@ fun EntryScreen(viewModel: MainViewModel) {
             }
             .padding(16.dp)
     ) {
-        HeaderSection(totalInflow, totalOutflow, balance, transactions, context)
+        HeaderSection(totalInflow, totalOutflow, balance, transactions + deletedTransactions, context, viewModel::importTransactions)
         
         Spacer(modifier = Modifier.height(16.dp))
         
@@ -268,6 +272,8 @@ fun EntryScreen(viewModel: MainViewModel) {
             onWalletDestinationSelect = viewModel::onWalletDestinationSelect,
             feeInput = feeInput,
             onFeeChange = viewModel::onFeeChange,
+            timestampInput = timestampInput,
+            onTimestampChange = viewModel::onTimestampChange,
             onAddWallet = viewModel::addWallet,
             onDeleteWallet = viewModel::deleteWallet,
             onSave = viewModel::saveTransaction,
@@ -284,6 +290,7 @@ fun EntryScreen(viewModel: MainViewModel) {
 @Composable
 fun LogsScreen(viewModel: MainViewModel, onNavigateToEntry: () -> Unit) {
     val transactions by viewModel.transactions.collectAsStateWithLifecycle()
+    val deletedTransactions by viewModel.deletedTransactions.collectAsStateWithLifecycle()
 
     Column(
         modifier = Modifier
@@ -292,7 +299,10 @@ fun LogsScreen(viewModel: MainViewModel, onNavigateToEntry: () -> Unit) {
     ) {
         BottomSection(
             transactions = transactions,
-            onDelete = viewModel::deleteTransaction,
+            deletedTransactions = deletedTransactions,
+            onDelete = viewModel::softDeleteTransaction,
+            onRestore = viewModel::restoreTransaction,
+            onPermanentDelete = viewModel::deleteTransaction,
             onEdit = { tx ->
                 viewModel.onEditTransaction(tx)
                 onNavigateToEntry()
@@ -302,14 +312,15 @@ fun LogsScreen(viewModel: MainViewModel, onNavigateToEntry: () -> Unit) {
 }
 
 @Composable
-fun HeaderSection(inflow: Long, outflow: Long, balance: Long, transactions: List<Transaction>, context: Context) {
+fun HeaderSection(inflow: Long, outflow: Long, balance: Long, transactions: List<Transaction>, context: Context, onImport: (List<Transaction>) -> Unit) {
     var showExportDialog by remember { mutableStateOf(false) }
 
     if (showExportDialog) {
         ExportDialog(
             transactions = transactions,
             onDismiss = { showExportDialog = false },
-            context = context
+            context = context,
+            onImport = onImport
         )
     }
 
@@ -336,12 +347,7 @@ fun HeaderSection(inflow: Long, outflow: Long, balance: Long, transactions: List
                     style = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp, letterSpacing = 1.sp, color = TextGray)
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = "History",
-                        tint = TextPrimary,
-                        modifier = Modifier.size(20.dp).clickable { /* Keep structure */ }
-                    )
+                    Box(modifier = Modifier.size(20.dp))
                     Icon(
                         imageVector = Icons.Default.Share,
                         contentDescription = "Export",
@@ -436,6 +442,8 @@ fun MidSection(
     onWalletDestinationSelect: (String) -> Unit,
     feeInput: String,
     onFeeChange: (String) -> Unit,
+    timestampInput: String,
+    onTimestampChange: (String) -> Unit,
     onAddWallet: (String) -> Unit,
     onDeleteWallet: (String) -> Unit,
     onSave: () -> Unit,
@@ -678,6 +686,30 @@ fun MidSection(
             }
         }
 
+        // Date/time
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = ComponentBg,
+            shape = RoundedCornerShape(20.dp)
+        ) {
+            BasicTextField(
+                value = timestampInput,
+                onValueChange = onTimestampChange,
+                singleLine = true,
+                textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 14.sp, color = TextPrimary),
+                modifier = Modifier.fillMaxWidth().padding(16.dp).testTag("timestamp_input"),
+                cursorBrush = SolidColor(TextPrimary),
+                decorationBox = { innerTextField ->
+                    Box(contentAlignment = Alignment.CenterStart) {
+                        if (timestampInput.isEmpty()) {
+                            Text("yyyy-MM-dd HH:mm", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 14.sp, color = TextSecondary))
+                        }
+                        innerTextField()
+                    }
+                }
+            )
+        }
+
         // Notes (Optional)
         Surface(
             modifier = Modifier.fillMaxWidth(),
@@ -756,9 +788,45 @@ fun CategoryGridButton(text: String, isSelected: Boolean, color: Color, modifier
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BottomSection(transactions: List<Transaction>, onDelete: (Int) -> Unit, onEdit: (Transaction) -> Unit) {
+fun BottomSection(
+    transactions: List<Transaction>,
+    deletedTransactions: List<Transaction>,
+    onDelete: (Int) -> Unit,
+    onRestore: (Int) -> Unit,
+    onPermanentDelete: (Int) -> Unit,
+    onEdit: (Transaction) -> Unit
+) {
+    var pendingDelete by remember { mutableStateOf<Transaction?>(null) }
+    var pendingPermanentDelete by remember { mutableStateOf<Transaction?>(null) }
+    var showTrash by remember { mutableStateOf(false) }
+
+    pendingDelete?.let { tx ->
+        ConfirmDialog(
+            title = "Delete entry?",
+            message = "Move ${formatCurrency(tx.amount)} to trash. You can restore it later.",
+            confirmText = "DELETE",
+            onConfirm = {
+                onDelete(tx.id)
+                pendingDelete = null
+            },
+            onDismiss = { pendingDelete = null }
+        )
+    }
+
+    pendingPermanentDelete?.let { tx ->
+        ConfirmDialog(
+            title = "Delete forever?",
+            message = "This permanently removes ${formatCurrency(tx.amount)} from trash.",
+            confirmText = "DELETE FOREVER",
+            onConfirm = {
+                onPermanentDelete(tx.id)
+                pendingPermanentDelete = null
+            },
+            onDismiss = { pendingPermanentDelete = null }
+        )
+    }
+
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
@@ -766,94 +834,108 @@ fun BottomSection(transactions: List<Transaction>, onDelete: (Int) -> Unit, onEd
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("LOG BOOK", style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, color = TextGray))
-            Text("LIFO_SORTED", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 9.sp, color = TextGray))
+            Text(
+                if (showTrash) "ACTIVE (${transactions.size})" else "TRASH (${deletedTransactions.size})",
+                style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 9.sp, color = TextGray),
+                modifier = Modifier.clickable { showTrash = !showTrash }
+            )
         }
-        
+
         Spacer(modifier = Modifier.height(8.dp))
 
+        val list = if (showTrash) deletedTransactions else transactions
         LazyColumn(
             modifier = Modifier.fillMaxWidth(),
             contentPadding = PaddingValues(bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(transactions, key = { it.id }) { tx ->
-                val dateFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
-                val timeStr = dateFormat.format(Date(tx.timestamp))
-                
-                val displayCategory = if (tx.category == "OPS") "OPER" else tx.category
-                val color = when (displayCategory) {
-                    "CORE" -> CoreColor
-                    "OPER" -> OpsColor
-                    "HOBBY" -> HobbyColor
-                    "VAULT" -> VaultColor
-                    else -> TextPrimary
-                }
-
-                SwipeToDismissBox(
-                    state = rememberSwipeToDismissBoxState(
-                        confirmValueChange = {
-                            if (it == SwipeToDismissBoxValue.EndToStart) {
-                                onDelete(tx.id)
-                                true
-                            } else false
-                        }
-                    ),
-                    backgroundContent = {
-                        Surface(
-                            modifier = Modifier.fillMaxSize(),
-                            shape = RoundedCornerShape(20.dp),
-                            color = SoftRed
-                        ) {
-                            Box(
-                                modifier = Modifier.fillMaxSize().padding(end = 16.dp),
-                                contentAlignment = Alignment.CenterEnd
-                            ) {
-                                Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete", tint = White)
-                            }
-                        }
-                    },
-                    enableDismissFromStartToEnd = false
-                ) {
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .pointerInput(Unit) {
-                                detectTapGestures(
-                                    onLongPress = { onEdit(tx) }
-                                )
-                            },
-                        shape = RoundedCornerShape(20.dp),
-                        color = White,
-                        tonalElevation = 2.dp
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(timeStr, style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 10.sp, color = TextGray))
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Surface(color = color.copy(alpha = 0.1f), shape = RoundedCornerShape(percent = 50)) {
-                                Text(displayCategory, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = color))
-                            }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                val subcatText = tx.subcategory.ifBlank { "NO SUBCATEGORY" }
-                                Text(subcatText, style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary), maxLines = 1)
-                                if (!tx.notes.isNullOrEmpty()) {
-                                    Text(tx.notes, style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 10.sp, color = TextGray), maxLines = 1)
-                                }
-                            }
-                            Text(
-                                text = formatCurrency(tx.amount),
-                                style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 14.sp, fontWeight = FontWeight.Black, color = if (tx.type == "IN") VaultColor else TextPrimary),
-                                textAlign = TextAlign.End
-                            )
-                        }
-                    }
-                }
+            items(list, key = { it.id }) { tx ->
+                TransactionRow(
+                    tx = tx,
+                    isTrash = showTrash,
+                    onEdit = onEdit,
+                    onDelete = { pendingDelete = tx },
+                    onRestore = { onRestore(tx.id) },
+                    onPermanentDelete = { pendingPermanentDelete = tx }
+                )
             }
         }
     }
+}
+
+@Composable
+fun TransactionRow(
+    tx: Transaction,
+    isTrash: Boolean,
+    onEdit: (Transaction) -> Unit,
+    onDelete: () -> Unit,
+    onRestore: () -> Unit,
+    onPermanentDelete: () -> Unit
+) {
+    val dateFormat = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
+    val timeStr = dateFormat.format(Date(tx.timestamp))
+    val displayCategory = if (tx.category == "OPS") "OPER" else tx.category
+    val color = when (displayCategory) {
+        "CORE" -> CoreColor
+        "OPER" -> OpsColor
+        "HOBBY" -> HobbyColor
+        "VAULT" -> VaultColor
+        else -> TextPrimary
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = White,
+        tonalElevation = 2.dp
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(timeStr, style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 10.sp, color = TextGray))
+            Spacer(modifier = Modifier.width(12.dp))
+            Surface(color = color.copy(alpha = 0.1f), shape = RoundedCornerShape(percent = 50)) {
+                Text(displayCategory, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = color))
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                val subcatText = tx.subcategory.ifBlank { "NO SUBCATEGORY" }
+                Text(subcatText, style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary), maxLines = 1)
+                if (!tx.notes.isNullOrEmpty()) {
+                    Text(tx.notes, style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 10.sp, color = TextGray), maxLines = 1)
+                }
+            }
+            Text(
+                text = formatCurrency(tx.amount),
+                style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 14.sp, fontWeight = FontWeight.Black, color = if (tx.type == "IN") VaultColor else TextPrimary),
+                textAlign = TextAlign.End
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            if (isTrash) {
+                Text("RESTORE", color = VaultColor, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable(onClick = onRestore).padding(6.dp))
+                Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete forever", tint = SoftRed, modifier = Modifier.size(28.dp).clickable(onClick = onPermanentDelete).padding(4.dp))
+            } else {
+                Text("EDIT", color = PrimaryBlue, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { onEdit(tx) }.padding(6.dp))
+                Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete", tint = SoftRed, modifier = Modifier.size(28.dp).clickable(onClick = onDelete).padding(4.dp))
+            }
+        }
+    }
+}
+
+@Composable
+fun ConfirmDialog(title: String, message: String, confirmText: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { Text(message) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) { Text(confirmText, color = SoftRed) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("CANCEL") }
+        }
+    )
 }
 
 fun formatCurrency(amount: Long): String {
@@ -862,9 +944,21 @@ fun formatCurrency(amount: Long): String {
 }
 
 @Composable
-fun ExportDialog(transactions: List<Transaction>, onDismiss: () -> Unit, context: Context) {
+fun ExportDialog(transactions: List<Transaction>, onDismiss: () -> Unit, context: Context, onImport: (List<Transaction>) -> Unit) {
     var selectedRange by remember { mutableStateOf("Current Month") }
     val ranges = listOf("This Week", "Current Month", "All Time")
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            val imported = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { parseBackupJson(it.readText()) }.orEmpty()
+            if (imported.isNotEmpty()) {
+                onImport(imported)
+                Toast.makeText(context, "Imported ${imported.size} entries", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(context, "No entries imported", Toast.LENGTH_SHORT).show()
+            }
+            onDismiss()
+        }
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -928,6 +1022,24 @@ fun ExportDialog(transactions: List<Transaction>, onDismiss: () -> Unit, context
                     ) {
                         Text("Save as Text (.txt)", style = TextStyle(fontFamily = FontFamily.Monospace, color = White))
                     }
+                    Button(
+                        onClick = {
+                            val json = generateBackupJson(transactions)
+                            saveToFile(context, json, "MalasFinance_Backup.json", "application/json")
+                            onDismiss()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = DarkGray)
+                    ) {
+                        Text("Save JSON Backup", style = TextStyle(fontFamily = FontFamily.Monospace, color = White))
+                    }
+                    Button(
+                        onClick = { importLauncher.launch("application/json") },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = DarkGray)
+                    ) {
+                        Text("Import JSON Backup", style = TextStyle(fontFamily = FontFamily.Monospace, color = White))
+                    }
                 }
             }
         }
@@ -983,46 +1095,102 @@ fun generateMarkdown(transactions: List<Transaction>, range: String): String {
     builder.appendLine("- HOBBY: $outHobby")
     builder.appendLine("- VAULT: $outVault")
     builder.appendLine()
-    
+
     builder.appendLine("## OUT BY SUBCATEGORY")
-    val subcatMap = filtered.filter { it.type == "OUT" && it.subcategory.isNotBlank() }
+    filtered.filter { it.type == "OUT" && it.subcategory.isNotBlank() }
         .groupBy { it.subcategory }
         .mapValues { entry -> entry.value.sumOf { it.amount } }
         .toList()
         .sortedByDescending { it.second }
-    
-    subcatMap.forEach { (subcat, amount) ->
-        builder.appendLine("- $subcat: $amount")
-    }
+        .forEach { (subcat, amount) -> builder.appendLine("- ${escapeMarkdown(subcat)}: $amount") }
     builder.appendLine()
 
     builder.appendLine("## LEDGER LOG")
-    builder.appendLine("| Date | Type (IN/OUT) | Category | Subcategory | Amount |")
+    builder.appendLine("| Date Time | Type | Category | Subcategory / Notes | Amount |")
     builder.appendLine("|---|---|---|---|---|")
 
-    val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+    val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
     filtered.forEach { tx ->
         val dStr = dateFormat.format(Date(tx.timestamp))
         val dispCat = if (tx.category == "OPS") "OPERASIONAL" else tx.category
         val combinedNotes = if (!tx.notes.isNullOrBlank()) "${tx.subcategory} (${tx.notes})" else tx.subcategory
-        val subcat = combinedNotes.ifBlank { "-" }
+        val subcat = escapeMarkdown(combinedNotes.ifBlank { "-" })
         builder.appendLine("| $dStr | ${tx.type} | $dispCat | $subcat | ${tx.amount} |")
     }
 
     return builder.toString()
 }
 
+fun escapeMarkdown(value: String): String = value.replace("|", "\\|").replace("\n", " ")
+
+fun generateBackupJson(transactions: List<Transaction>): String {
+    val array = JSONArray()
+    transactions.forEach { tx ->
+        array.put(JSONObject().apply {
+            put("id", tx.id)
+            put("amount", tx.amount)
+            put("type", tx.type)
+            put("category", tx.category)
+            put("subcategory", tx.subcategory)
+            put("notes", tx.notes)
+            put("timestamp", tx.timestamp)
+            put("walletSource", tx.walletSource)
+            put("walletDestination", tx.walletDestination)
+            put("fee", tx.fee)
+            put("deletedAt", tx.deletedAt)
+        })
+    }
+    return JSONObject().put("version", 1).put("transactions", array).toString(2)
+}
+
+fun parseBackupJson(json: String): List<Transaction> {
+    val array = JSONObject(json).optJSONArray("transactions") ?: return emptyList()
+    return (0 until array.length()).mapNotNull { index ->
+        val item = array.optJSONObject(index) ?: return@mapNotNull null
+        val amount = item.optLong("amount", 0L)
+        val timestamp = item.optLong("timestamp", 0L)
+        if (amount <= 0L || timestamp <= 0L) return@mapNotNull null
+        Transaction(
+            id = item.optInt("id", 0),
+            amount = amount,
+            type = item.optString("type", "OUT"),
+            category = item.optString("category", "CORE"),
+            subcategory = item.optString("subcategory", ""),
+            notes = item.optString("notes").takeIf { !item.isNull("notes") && it.isNotBlank() },
+            timestamp = timestamp,
+            walletSource = item.optString("walletSource", "CASH"),
+            walletDestination = item.optString("walletDestination").takeIf { !item.isNull("walletDestination") && it.isNotBlank() },
+            fee = item.optLong("fee").takeIf { !item.isNull("fee") },
+            deletedAt = item.optLong("deletedAt").takeIf { !item.isNull("deletedAt") }
+        )
+    }
+}
+
 fun filterByRange(transactions: List<Transaction>, range: String): List<Transaction> {
     if (range == "All Time") return transactions
     val now = Calendar.getInstance()
-    return transactions.filter { tx ->
-        val cal = Calendar.getInstance().apply { timeInMillis = tx.timestamp }
+    val start = Calendar.getInstance().apply {
         when (range) {
-            "This Week" -> cal.get(Calendar.WEEK_OF_YEAR) == now.get(Calendar.WEEK_OF_YEAR) && cal.get(Calendar.YEAR) == now.get(Calendar.YEAR)
-            "Current Month" -> cal.get(Calendar.MONTH) == now.get(Calendar.MONTH) && cal.get(Calendar.YEAR) == now.get(Calendar.YEAR)
-            else -> true
+            "This Week" -> {
+                firstDayOfWeek = now.firstDayOfWeek
+                set(Calendar.DAY_OF_WEEK, firstDayOfWeek)
+            }
+            "Current Month" -> set(Calendar.DAY_OF_MONTH, 1)
+            else -> return transactions
+        }
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }
+    val end = Calendar.getInstance().apply {
+        timeInMillis = start.timeInMillis
+        when (range) {
+            "This Week" -> add(Calendar.WEEK_OF_YEAR, 1)
+            "Current Month" -> add(Calendar.MONTH, 1)
         }
     }
+    return transactions.filter { it.timestamp >= start.timeInMillis && it.timestamp < end.timeInMillis }
 }
 
 @Composable

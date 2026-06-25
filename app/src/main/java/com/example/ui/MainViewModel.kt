@@ -14,6 +14,9 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class MainViewModel(private val repository: TransactionRepository) : ViewModel() {
 
@@ -25,6 +28,13 @@ class MainViewModel(private val repository: TransactionRepository) : ViewModel()
         )
 
     val wallets: StateFlow<List<Wallet>> = repository.allWallets
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    val deletedTransactions: StateFlow<List<Transaction>> = repository.deletedTransactions
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -57,6 +67,13 @@ class MainViewModel(private val repository: TransactionRepository) : ViewModel()
 
     private val _editingTransactionId = MutableStateFlow<Int?>(null)
     val editingTransactionId = _editingTransactionId.asStateFlow()
+
+    private val timestampFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).apply {
+        isLenient = false
+    }
+
+    private val _timestampInput = MutableStateFlow(timestampFormat.format(Date()))
+    val timestampInput = _timestampInput.asStateFlow()
 
     val frequentLogs: StateFlow<List<Transaction>> = transactions.map { txList ->
         txList.filter { it.type != "TRANSFER" }.groupBy { "${it.amount}|${it.category}|${it.subcategory}|${it.type}" }
@@ -130,6 +147,10 @@ class MainViewModel(private val repository: TransactionRepository) : ViewModel()
         _notesInput.value = value
     }
 
+    fun onTimestampChange(value: String) {
+        _timestampInput.value = value
+    }
+
     fun onCategorySelect(category: String) {
         _selectedCategory.value = category
     }
@@ -174,6 +195,7 @@ class MainViewModel(private val repository: TransactionRepository) : ViewModel()
         _walletSource.value = transaction.walletSource
         _walletDestination.value = transaction.walletDestination
         _feeInput.value = transaction.fee?.toString() ?: ""
+        _timestampInput.value = timestampFormat.format(Date(transaction.timestamp))
     }
 
     fun applyFrequent(amount: Long, category: String, subcategory: String, type: String) {
@@ -186,9 +208,9 @@ class MainViewModel(private val repository: TransactionRepository) : ViewModel()
 
     fun saveTransaction() {
         val amount = _amountInput.value.toLongOrNull()
-        if (amount != null && amount > 0) {
+        val timestamp = runCatching { timestampFormat.parse(_timestampInput.value)?.time }.getOrNull()
+        if (amount != null && amount > 0 && timestamp != null) {
             val editId = _editingTransactionId.value
-            val existingTx = if (editId != null) transactions.value.find { it.id == editId } else null
             
             val isTransfer = _transactionType.value == "TRANSFER"
             
@@ -199,7 +221,7 @@ class MainViewModel(private val repository: TransactionRepository) : ViewModel()
                 category = if (isTransfer) "TRANSFER" else _selectedCategory.value,
                 subcategory = if (isTransfer) "" else _subcategoryInput.value.trim(),
                 notes = _notesInput.value.trim().takeIf { it.isNotEmpty() },
-                timestamp = existingTx?.timestamp ?: System.currentTimeMillis(),
+                timestamp = timestamp,
                 walletSource = _walletSource.value,
                 walletDestination = if (isTransfer) _walletDestination.value else null,
                 fee = if (isTransfer) _feeInput.value.toLongOrNull() else null
@@ -215,7 +237,26 @@ class MainViewModel(private val repository: TransactionRepository) : ViewModel()
                 _subcategoryInput.value = ""
                 _notesInput.value = ""
                 _feeInput.value = ""
+                _timestampInput.value = timestampFormat.format(Date())
             }
+        }
+    }
+
+    fun softDeleteTransaction(id: Int) {
+        viewModelScope.launch {
+            repository.softDeleteById(id)
+        }
+    }
+
+    fun restoreTransaction(id: Int) {
+        viewModelScope.launch {
+            repository.restoreById(id)
+        }
+    }
+
+    fun importTransactions(transactions: List<Transaction>) {
+        viewModelScope.launch {
+            repository.insertAll(transactions)
         }
     }
 

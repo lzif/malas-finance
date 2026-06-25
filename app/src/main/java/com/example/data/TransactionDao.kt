@@ -8,14 +8,26 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface TransactionDao {
-    @Query("SELECT * FROM transactions ORDER BY timestamp DESC")
+    @Query("SELECT * FROM transactions WHERE deletedAt IS NULL ORDER BY timestamp DESC")
     fun getAllTransactions(): Flow<List<Transaction>>
+
+    @Query("SELECT * FROM transactions WHERE deletedAt IS NOT NULL ORDER BY deletedAt DESC")
+    fun getDeletedTransactions(): Flow<List<Transaction>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTransaction(transaction: Transaction)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertTransactions(transactions: List<Transaction>)
+
     @androidx.room.Update
     suspend fun updateTransaction(transaction: Transaction)
+
+    @Query("UPDATE transactions SET deletedAt = :deletedAt WHERE id = :id")
+    suspend fun softDeleteTransactionById(id: Int, deletedAt: Long)
+
+    @Query("UPDATE transactions SET deletedAt = NULL WHERE id = :id")
+    suspend fun restoreTransactionById(id: Int)
 
     @Query("DELETE FROM transactions WHERE id = :id")
     suspend fun deleteTransactionById(id: Int)

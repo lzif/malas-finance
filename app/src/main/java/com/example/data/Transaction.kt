@@ -14,5 +14,6 @@ data class Transaction(
     val timestamp: Long = System.currentTimeMillis(),
     val walletSource: String = "CASH",
     val walletDestination: String? = null,
-    val fee: Long? = null
+    val fee: Long? = null,
+    val deletedAt: Long? = null
 )
