@@ -36,21 +36,21 @@ jobs:
         run: gradle wrapper --gradle-version 9.3.1
 
       - name: Decode Keystore
-        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/malas.keystore
+        run: base64 -d app/malas.keystore.base64 > app/malas.keystore
 
       - name: Test
         run: |
           chmod +x ./gradlew
           ./gradlew testDebugUnitTest
         env:
-          ORG_GRADLE_PROJECT_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          ORG_GRADLE_PROJECT_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          ORG_GRADLE_PROJECT_KEYSTORE_PASSWORD: malas123
+          ORG_GRADLE_PROJECT_KEY_PASSWORD: malas123
 
       - name: Build Release APK
         run: ./gradlew assembleRelease
         env:
-          ORG_GRADLE_PROJECT_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          ORG_GRADLE_PROJECT_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          ORG_GRADLE_PROJECT_KEYSTORE_PASSWORD: malas123
+          ORG_GRADLE_PROJECT_KEY_PASSWORD: malas123
 
       - name: Publish Versioned Release
         env:
