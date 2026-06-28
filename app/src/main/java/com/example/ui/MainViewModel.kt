@@ -68,7 +68,10 @@ class MainViewModel(private val repository: TransactionRepository) : ViewModel()
     private val _editingTransactionId = MutableStateFlow<Int?>(null)
     val editingTransactionId = _editingTransactionId.asStateFlow()
 
-    private val timestampFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).apply {
+    private val _walletDeleteError = MutableStateFlow<String?>(null)
+    val walletDeleteError = _walletDeleteError.asStateFlow()
+
+    private val timestampFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.ROOT).apply {
         isLenient = false
     }
 
@@ -113,8 +116,17 @@ class MainViewModel(private val repository: TransactionRepository) : ViewModel()
 
     fun deleteWallet(name: String) {
         viewModelScope.launch {
-            repository.deleteWallet(Wallet(name))
+            val refCount = repository.countReferencesToWallet(name)
+            if (refCount > 0) {
+                _walletDeleteError.value = "Cannot delete '$name': $refCount active transaction(s) use this wallet"
+            } else {
+                repository.deleteWallet(Wallet(name))
+            }
         }
+    }
+
+    fun clearWalletDeleteError() {
+        _walletDeleteError.value = null
     }
 
     fun onAmountChange(value: String) {

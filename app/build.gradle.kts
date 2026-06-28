@@ -2,7 +2,6 @@ plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
   alias(libs.plugins.google.devtools.ksp)
-  alias(libs.plugins.roborazzi)
 }
 
 android {
@@ -13,8 +12,8 @@ android {
     applicationId = "com.aistudio.malasfinance.mfxz"
     minSdk = 24
     targetSdk = 36
-    versionCode = 6
-    versionName = "1.5.0"
+    versionCode = 7
+    versionName = "1.5.1"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -31,10 +30,10 @@ android {
 // ponytail: release key stays repo-local for personal GitHub Actions builds; move to GitHub secrets before making repo public.
   signingConfigs {
     create("release") {
-      storeFile = file("malas.keystore") // Langsung nembak ke file keystore permanen lu
-      storePassword = "malas123"
+      storeFile = file("malas.keystore")
+      storePassword = project.findProperty("KEYSTORE_PASSWORD") as? String ?: ""
       keyAlias = "malas"
-      keyPassword = "malas123"
+      keyPassword = project.findProperty("KEY_PASSWORD") as? String ?: ""
     }
   }
 
@@ -79,9 +78,6 @@ dependencies {
   testImplementation(libs.junit)
   testImplementation(libs.kotlinx.coroutines.test)
   testImplementation(libs.robolectric)
-  testImplementation(libs.roborazzi)
-  testImplementation(libs.roborazzi.compose)
-  testImplementation(libs.roborazzi.junit.rule)
   androidTestImplementation(platform(libs.androidx.compose.bom))
   androidTestImplementation(libs.androidx.compose.ui.test.junit4)
   androidTestImplementation(libs.androidx.espresso.core)

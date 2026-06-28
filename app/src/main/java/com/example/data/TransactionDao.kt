@@ -40,4 +40,7 @@ interface TransactionDao {
 
     @androidx.room.Delete
     suspend fun deleteWallet(wallet: Wallet)
+
+    @Query("SELECT COUNT(*) FROM transactions WHERE (walletSource = :walletName OR walletDestination = :walletName) AND deletedAt IS NULL")
+    suspend fun countTransactionsReferencingWallet(walletName: String): Int
 }

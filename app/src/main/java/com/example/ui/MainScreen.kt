@@ -2,12 +2,7 @@ package com.example.ui
 
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.ContentValues
 import android.content.Context
-import android.os.Environment
-import android.provider.MediaStore
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -56,10 +51,13 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.List
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.Transaction
+import com.example.data.formatCurrency
+import com.example.data.generateBackupJson
+import com.example.data.generateMarkdown
+import com.example.data.parseBackupJson
 import com.example.ui.theme.*
-import org.json.JSONArray
-import org.json.JSONObject
-import java.text.NumberFormat
+import com.example.util.copyToClipboard
+import com.example.util.saveToFile
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -162,6 +160,7 @@ fun EntryScreen(viewModel: MainViewModel) {
     val timestampInput by viewModel.timestampInput.collectAsStateWithLifecycle()
 
     val editingTransactionId by viewModel.editingTransactionId.collectAsStateWithLifecycle()
+    val walletDeleteError by viewModel.walletDeleteError.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
 
@@ -198,7 +197,7 @@ fun EntryScreen(viewModel: MainViewModel) {
                 Spacer(modifier = Modifier.height(4.dp))
                 LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     items(transactions) { tx ->
-                        val dateFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
+                        val dateFormat = SimpleDateFormat("HH:mm", Locale.ROOT)
                         val timeStr = dateFormat.format(Date(tx.timestamp))
                         
                         val displayCategory = if (tx.category == "OPS") "OPER" else tx.category
@@ -279,6 +278,8 @@ fun EntryScreen(viewModel: MainViewModel) {
             onTimestampChange = viewModel::onTimestampChange,
             onAddWallet = viewModel::addWallet,
             onDeleteWallet = viewModel::deleteWallet,
+            walletDeleteError = walletDeleteError,
+            onClearWalletDeleteError = viewModel::clearWalletDeleteError,
             onSave = viewModel::saveTransaction,
             frequentLogs = frequentLogs,
             subcategories = subcategories,
@@ -346,7 +347,7 @@ fun HeaderSection(inflow: Long, outflow: Long, balance: Long, transactions: List
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "MALAS_FINANCE_v1.5.0",
+                    "MALAS_FINANCE_v1.5.1",
                     style = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp, letterSpacing = 1.sp, color = TextGray)
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -449,6 +450,8 @@ fun MidSection(
     onTimestampChange: (String) -> Unit,
     onAddWallet: (String) -> Unit,
     onDeleteWallet: (String) -> Unit,
+    walletDeleteError: String?,
+    onClearWalletDeleteError: () -> Unit,
     onSave: () -> Unit,
     frequentLogs: List<Transaction>,
     subcategories: List<String>,
@@ -464,7 +467,9 @@ fun MidSection(
             wallets = wallets,
             onAddWallet = onAddWallet,
             onDeleteWallet = onDeleteWallet,
-            onDismiss = { showWalletManager = false }
+            onDismiss = { showWalletManager = false },
+            deleteError = walletDeleteError,
+            onClearError = onClearWalletDeleteError
         )
     }
 
@@ -728,7 +733,7 @@ fun MidSection(
 @Composable
 fun DateTimePickerRow(timestampInput: String, onTimestampChange: (String) -> Unit) {
     val context = LocalContext.current
-    val format = remember { SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).apply { isLenient = false } }
+    val format = remember { SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.ROOT).apply { isLenient = false } }
     val label = timestampInput.ifBlank { format.format(Date(System.currentTimeMillis())) }
 
     Surface(
@@ -895,7 +900,7 @@ fun TransactionRow(
     onRestore: () -> Unit,
     onPermanentDelete: () -> Unit
 ) {
-    val dateFormat = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
+    val dateFormat = SimpleDateFormat("MM-dd HH:mm", Locale.ROOT)
     val timeStr = dateFormat.format(Date(tx.timestamp))
     val displayCategory = if (tx.category == "OPS") "OPER" else tx.category
     val color = when (displayCategory) {
@@ -959,11 +964,6 @@ fun ConfirmDialog(title: String, message: String, confirmText: String, onConfirm
             TextButton(onClick = onDismiss) { Text("CANCEL") }
         }
     )
-}
-
-fun formatCurrency(amount: Long): String {
-    val formatter = NumberFormat.getNumberInstance(Locale("id", "ID"))
-    return formatter.format(amount)
 }
 
 @Composable
@@ -1069,153 +1069,6 @@ fun ExportDialog(transactions: List<Transaction>, onDismiss: () -> Unit, context
     }
 }
 
-fun copyToClipboard(context: Context, text: String) {
-    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    val clip = ClipData.newPlainText("MalasFinance Export", text)
-    clipboard.setPrimaryClip(clip)
-    Toast.makeText(context, "Exported to Clipboard", Toast.LENGTH_SHORT).show()
-}
-
-fun saveToFile(context: Context, text: String, filename: String, mimeType: String) {
-    val resolver = context.contentResolver
-    val contentValues = ContentValues().apply {
-        put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
-        put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
-        put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
-    }
-
-    val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
-    if (uri != null) {
-        resolver.openOutputStream(uri)?.use { outputStream ->
-            outputStream.write(text.toByteArray())
-        }
-        Toast.makeText(context, "Saved to Downloads", Toast.LENGTH_SHORT).show()
-    } else {
-        Toast.makeText(context, "Failed to save file", Toast.LENGTH_SHORT).show()
-    }
-}
-
-fun generateMarkdown(transactions: List<Transaction>, range: String): String {
-    val filtered = filterByRange(transactions, range)
-    val totalIn = filtered.filter { it.type == "IN" }.sumOf { it.amount }
-    val totalOut = filtered.filter { it.type == "OUT" }.sumOf { it.amount }
-    val balance = totalIn - totalOut
-
-    val outCore = filtered.filter { it.type == "OUT" && it.category == "CORE" }.sumOf { it.amount }
-    val outOper = filtered.filter { it.type == "OUT" && (it.category == "OPER" || it.category == "OPS") }.sumOf { it.amount }
-    val outHobby = filtered.filter { it.type == "OUT" && it.category == "HOBBY" }.sumOf { it.amount }
-    val outVault = filtered.filter { it.type == "OUT" && it.category == "VAULT" }.sumOf { it.amount }
-
-    val builder = StringBuilder()
-    builder.appendLine("# SUMMARY ($range)")
-    builder.appendLine("- Current Balance: $balance")
-    builder.appendLine("- Total IN: $totalIn")
-    builder.appendLine("- Total OUT: $totalOut")
-    builder.appendLine()
-    builder.appendLine("## OUT BY CATEGORY")
-    builder.appendLine("- CORE: $outCore")
-    builder.appendLine("- OPERASIONAL: $outOper")
-    builder.appendLine("- HOBBY: $outHobby")
-    builder.appendLine("- VAULT: $outVault")
-    builder.appendLine()
-
-    builder.appendLine("## OUT BY SUBCATEGORY")
-    filtered.filter { it.type == "OUT" && it.subcategory.isNotBlank() }
-        .groupBy { it.subcategory }
-        .mapValues { entry -> entry.value.sumOf { it.amount } }
-        .toList()
-        .sortedByDescending { it.second }
-        .forEach { (subcat, amount) -> builder.appendLine("- ${escapeMarkdown(subcat)}: $amount") }
-    builder.appendLine()
-
-    builder.appendLine("## LEDGER LOG")
-    builder.appendLine("| Date Time | Type | Category | Subcategory / Notes | Amount |")
-    builder.appendLine("|---|---|---|---|---|")
-
-    val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-    filtered.forEach { tx ->
-        val dStr = dateFormat.format(Date(tx.timestamp))
-        val dispCat = if (tx.category == "OPS") "OPERASIONAL" else tx.category
-        val combinedNotes = if (!tx.notes.isNullOrBlank()) "${tx.subcategory} (${tx.notes})" else tx.subcategory
-        val subcat = escapeMarkdown(combinedNotes.ifBlank { "-" })
-        builder.appendLine("| $dStr | ${tx.type} | $dispCat | $subcat | ${tx.amount} |")
-    }
-
-    return builder.toString()
-}
-
-fun escapeMarkdown(value: String): String = value.replace("|", "\\|").replace("\n", " ")
-
-fun generateBackupJson(transactions: List<Transaction>): String {
-    val array = JSONArray()
-    transactions.forEach { tx ->
-        array.put(JSONObject().apply {
-            put("id", tx.id)
-            put("amount", tx.amount)
-            put("type", tx.type)
-            put("category", tx.category)
-            put("subcategory", tx.subcategory)
-            put("notes", tx.notes)
-            put("timestamp", tx.timestamp)
-            put("walletSource", tx.walletSource)
-            put("walletDestination", tx.walletDestination)
-            put("fee", tx.fee)
-            put("deletedAt", tx.deletedAt)
-        })
-    }
-    return JSONObject().put("version", 1).put("transactions", array).toString(2)
-}
-
-fun parseBackupJson(json: String): List<Transaction> {
-    val array = JSONObject(json).optJSONArray("transactions") ?: return emptyList()
-    return (0 until array.length()).mapNotNull { index ->
-        val item = array.optJSONObject(index) ?: return@mapNotNull null
-        val amount = item.optLong("amount", 0L)
-        val timestamp = item.optLong("timestamp", 0L)
-        if (amount <= 0L || timestamp <= 0L) return@mapNotNull null
-        Transaction(
-            id = item.optInt("id", 0),
-            amount = amount,
-            type = item.optString("type", "OUT"),
-            category = item.optString("category", "CORE"),
-            subcategory = item.optString("subcategory", ""),
-            notes = item.optString("notes").takeIf { !item.isNull("notes") && it.isNotBlank() },
-            timestamp = timestamp,
-            walletSource = item.optString("walletSource", "CASH"),
-            walletDestination = item.optString("walletDestination").takeIf { !item.isNull("walletDestination") && it.isNotBlank() },
-            fee = item.optLong("fee").takeIf { !item.isNull("fee") },
-            deletedAt = item.optLong("deletedAt").takeIf { !item.isNull("deletedAt") }
-        )
-    }
-}
-
-fun filterByRange(transactions: List<Transaction>, range: String): List<Transaction> {
-    if (range == "All Time") return transactions
-    val now = Calendar.getInstance()
-    val start = Calendar.getInstance().apply {
-        when (range) {
-            "This Week" -> {
-                firstDayOfWeek = now.firstDayOfWeek
-                set(Calendar.DAY_OF_WEEK, firstDayOfWeek)
-            }
-            "Current Month" -> set(Calendar.DAY_OF_MONTH, 1)
-            else -> return transactions
-        }
-        set(Calendar.HOUR_OF_DAY, 0)
-        set(Calendar.MINUTE, 0)
-        set(Calendar.SECOND, 0)
-        set(Calendar.MILLISECOND, 0)
-    }
-    val end = Calendar.getInstance().apply {
-        timeInMillis = start.timeInMillis
-        when (range) {
-            "This Week" -> add(Calendar.WEEK_OF_YEAR, 1)
-            "Current Month" -> add(Calendar.MONTH, 1)
-        }
-    }
-    return transactions.filter { it.timestamp >= start.timeInMillis && it.timestamp < end.timeInMillis }
-}
-
 @Composable
 fun WalletDropdown(selectedWallet: String, wallets: List<String>, onSelect: (String) -> Unit, modifier: Modifier = Modifier) {
     var expanded by remember { mutableStateOf(false) }
@@ -1248,13 +1101,27 @@ fun WalletDropdown(selectedWallet: String, wallets: List<String>, onSelect: (Str
 }
 
 @Composable
-fun WalletManagerDialog(wallets: List<String>, onAddWallet: (String) -> Unit, onDeleteWallet: (String) -> Unit, onDismiss: () -> Unit) {
+fun WalletManagerDialog(wallets: List<String>, onAddWallet: (String) -> Unit, onDeleteWallet: (String) -> Unit, onDismiss: () -> Unit, deleteError: String?, onClearError: () -> Unit) {
     var newWalletName by remember { mutableStateOf("") }
     
     Dialog(onDismissRequest = onDismiss) {
         Surface(shape = RoundedCornerShape(16.dp), color = MediumGray, modifier = Modifier.fillMaxWidth().padding(16.dp)) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text("MANAGE WALLETS", style = TextStyle(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = White))
+                
+                if (deleteError != null) {
+                    Surface(color = SoftRed.copy(alpha = 0.15f), shape = RoundedCornerShape(8.dp)) {
+                        Text(
+                            deleteError,
+                            style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 12.sp, color = SoftRed),
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+                    LaunchedEffect(deleteError) {
+                        kotlinx.coroutines.delay(4000)
+                        onClearError()
+                    }
+                }
                 
                 LazyColumn(modifier = Modifier.heightIn(max = 200.dp)) {
                     val list = if (wallets.isEmpty()) listOf("CASH") else wallets

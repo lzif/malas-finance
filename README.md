@@ -25,7 +25,7 @@ Release format:
 - APK: `MalasFinance-v<version>-b<build>.apk`
 - Notes: version code, commit SHA, and changelog since previous version tag.
 
-Example APK filename: `MalasFinance-v1.5.0-b15.apk`.
+Example APK filename: `MalasFinance-v1.5.1-b15.apk`.
 This keeps downloads unique, so repeated downloads do not become `MalasFinance (1).apk`.
 
 ## CI/CD

@@ -22,4 +22,6 @@ class TransactionRepository(private val transactionDao: TransactionDao) {
     suspend fun insertWallet(wallet: Wallet) = transactionDao.insertWallet(wallet)
 
     suspend fun deleteWallet(wallet: Wallet) = transactionDao.deleteWallet(wallet)
+
+    suspend fun countReferencesToWallet(walletName: String): Int = transactionDao.countTransactionsReferencingWallet(walletName)
 }
