@@ -18,7 +18,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
@@ -183,7 +182,7 @@ fun EntryScreen(viewModel: MainViewModel) {
         Spacer(modifier = Modifier.height(6.dp))
         
         Surface(
-            modifier = Modifier.weight(1f).fillMaxWidth().shadow(
+            modifier = Modifier.weight(0.35f).fillMaxWidth().shadow(
                 elevation = 3.dp,
                 shape = RoundedCornerShape(12.dp),
                 spotColor = Color.LightGray,
@@ -245,7 +244,7 @@ fun EntryScreen(viewModel: MainViewModel) {
         Spacer(modifier = Modifier.height(6.dp))
 
         Surface(
-            modifier = Modifier.fillMaxWidth().shadow(
+            modifier = Modifier.weight(0.65f).fillMaxWidth().shadow(
                 elevation = 3.dp,
                 shape = RoundedCornerShape(12.dp),
                 spotColor = Color.LightGray,
@@ -255,7 +254,7 @@ fun EntryScreen(viewModel: MainViewModel) {
             color = White
         ) {
             MidSection(
-                modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp).verticalScroll(rememberScrollState()).padding(6.dp),
+                modifier = Modifier.fillMaxWidth().padding(6.dp),
             amountInput = amountInput,
             onAmountChange = viewModel::onAmountChange,
             subcategoryInput = subcategoryInput,
@@ -942,9 +941,11 @@ fun TransactionRow(
             Spacer(modifier = Modifier.width(8.dp))
             if (isTrash) {
                 Text("RESTORE", color = VaultColor, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable(onClick = onRestore).padding(6.dp))
+                Spacer(modifier = Modifier.width(8.dp))
                 Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete forever", tint = SoftRed, modifier = Modifier.size(28.dp).clickable(onClick = onPermanentDelete).padding(4.dp))
             } else {
                 Text("EDIT", color = PrimaryBlue, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { onEdit(tx) }.padding(6.dp))
+                Spacer(modifier = Modifier.width(8.dp))
                 Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete", tint = SoftRed, modifier = Modifier.size(28.dp).clickable(onClick = onDelete).padding(4.dp))
             }
         }
@@ -1003,7 +1004,7 @@ fun ExportDialog(transactions: List<Transaction>, onDismiss: () -> Unit, context
                             shape = RoundedCornerShape(4.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
-                                Text(range, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = if (selectedRange == range) Black else TextGray))
+                                Text(range, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = if (selectedRange == range) Black else TextPrimary))
                             }
                         }
                     }
@@ -1019,9 +1020,9 @@ fun ExportDialog(transactions: List<Transaction>, onDismiss: () -> Unit, context
                             onDismiss()
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = DarkGray)
+                        colors = ButtonDefaults.buttonColors(containerColor = DarkGray, contentColor = Black)
                     ) {
-                        Text("Copy to Clipboard", style = TextStyle(fontFamily = FontFamily.Monospace, color = White))
+                        Text("Copy to Clipboard", style = TextStyle(fontFamily = FontFamily.Monospace, color = Black))
                     }
                     Button(
                         onClick = {
@@ -1030,9 +1031,9 @@ fun ExportDialog(transactions: List<Transaction>, onDismiss: () -> Unit, context
                             onDismiss()
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = DarkGray)
+                        colors = ButtonDefaults.buttonColors(containerColor = DarkGray, contentColor = Black)
                     ) {
-                        Text("Save as Markdown (.md)", style = TextStyle(fontFamily = FontFamily.Monospace, color = White))
+                        Text("Save as Markdown (.md)", style = TextStyle(fontFamily = FontFamily.Monospace, color = Black))
                     }
                     Button(
                         onClick = {
@@ -1041,9 +1042,9 @@ fun ExportDialog(transactions: List<Transaction>, onDismiss: () -> Unit, context
                             onDismiss()
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = DarkGray)
+                        colors = ButtonDefaults.buttonColors(containerColor = DarkGray, contentColor = Black)
                     ) {
-                        Text("Save as Text (.txt)", style = TextStyle(fontFamily = FontFamily.Monospace, color = White))
+                        Text("Save as Text (.txt)", style = TextStyle(fontFamily = FontFamily.Monospace, color = Black))
                     }
                     Button(
                         onClick = {
@@ -1052,16 +1053,16 @@ fun ExportDialog(transactions: List<Transaction>, onDismiss: () -> Unit, context
                             onDismiss()
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = DarkGray)
+                        colors = ButtonDefaults.buttonColors(containerColor = DarkGray, contentColor = Black)
                     ) {
-                        Text("Save JSON Backup", style = TextStyle(fontFamily = FontFamily.Monospace, color = White))
+                        Text("Save JSON Backup", style = TextStyle(fontFamily = FontFamily.Monospace, color = Black))
                     }
                     Button(
                         onClick = { importLauncher.launch("application/json") },
                         modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = DarkGray)
+                        colors = ButtonDefaults.buttonColors(containerColor = DarkGray, contentColor = Black)
                     ) {
-                        Text("Import JSON Backup", style = TextStyle(fontFamily = FontFamily.Monospace, color = White))
+                        Text("Import JSON Backup", style = TextStyle(fontFamily = FontFamily.Monospace, color = Black))
                     }
                 }
             }
