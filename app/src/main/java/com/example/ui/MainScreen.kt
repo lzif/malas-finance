@@ -49,6 +49,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.List
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.BuildConfig
 import com.example.data.Transaction
 import com.example.data.formatCurrency
 import com.example.data.generateBackupJson
@@ -59,6 +60,10 @@ import com.example.util.copyToClipboard
 import com.example.util.saveToFile
 import java.text.SimpleDateFormat
 import java.util.*
+
+// Permanent deletes at or above this amount require a typed confirmation.
+// Future Config UI may surface this as an actual setting; constant for now.
+private const val BIG_DELETE_THRESHOLD = 1_000_000L
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -346,7 +351,7 @@ fun HeaderSection(inflow: Long, outflow: Long, balance: Long, transactions: List
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "MALAS_FINANCE_v1.5.1",
+                    "MALAS_FINANCE_v${BuildConfig.VERSION_NAME}",
                     style = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp, letterSpacing = 1.sp, color = TextGray)
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -385,13 +390,14 @@ fun HeaderSection(inflow: Long, outflow: Long, balance: Long, transactions: List
         HorizontalDivider(color = MediumGray, thickness = 1.dp)
         Spacer(modifier = Modifier.height(6.dp))
 
-        // Category percentages
+        // Category percentages — null when there's no OUT data so we don't divide by zero
         val outTxs = transactions.filter { it.type == "OUT" }
-        val outTotal = outTxs.sumOf { it.amount }.coerceAtLeast(1)
-        val corePct = (outTxs.filter { it.category == "CORE" }.sumOf { it.amount } * 100 / outTotal).toInt()
-        val opsPct = (outTxs.filter { it.category == "OPS" }.sumOf { it.amount } * 100 / outTotal).toInt()
-        val hobbyPct = (outTxs.filter { it.category == "HOBBY" }.sumOf { it.amount } * 100 / outTotal).toInt()
-        val vaultPct = (outTxs.filter { it.category == "VAULT" }.sumOf { it.amount } * 100 / outTotal).toInt()
+        val outTotal = outTxs.sumOf { it.amount }
+        val hasOut = outTotal > 0L
+        val corePct  = if (hasOut) (outTxs.filter { it.category == "CORE"  }.sumOf { it.amount } * 100 / outTotal).toInt() else null
+        val opsPct   = if (hasOut) (outTxs.filter { it.category == "OPS"   }.sumOf { it.amount } * 100 / outTotal).toInt() else null
+        val hobbyPct = if (hasOut) (outTxs.filter { it.category == "HOBBY" }.sumOf { it.amount } * 100 / outTotal).toInt() else null
+        val vaultPct = if (hasOut) (outTxs.filter { it.category == "VAULT" }.sumOf { it.amount } * 100 / outTotal).toInt() else null
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -407,7 +413,8 @@ fun HeaderSection(inflow: Long, outflow: Long, balance: Long, transactions: List
 }
 
 @Composable
-fun CategoryStatBox(name: String, percentage: Int, color: Color) {
+fun CategoryStatBox(name: String, percentage: Int?, color: Color) {
+    val pctText = percentage?.let { "$it%" } ?: "—"
     Surface(
         color = Color.Transparent
     ) {
@@ -418,7 +425,7 @@ fun CategoryStatBox(name: String, percentage: Int, color: Color) {
             Spacer(modifier = Modifier.width(4.dp))
             Column {
                 Text(name, style = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 9.sp, color = TextGray))
-                Text("$percentage%", style = TextStyle(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 11.sp, color = TextPrimary))
+                Text(pctText, style = TextStyle(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 11.sp, color = TextPrimary))
             }
         }
     }
@@ -842,15 +849,23 @@ fun BottomSection(
     }
 
     pendingPermanentDelete?.let { tx ->
+        val needsTypedConfirm = tx.amount >= BIG_DELETE_THRESHOLD
+        val typedTarget = if (needsTypedConfirm) tx.amount.toString() else null
+        val typedMessage = if (needsTypedConfirm) {
+            "This permanently removes ${formatCurrency(tx.amount)} from trash.\n\nType the amount below to confirm."
+        } else {
+            "This permanently removes ${formatCurrency(tx.amount)} from trash."
+        }
         ConfirmDialog(
             title = "Delete forever?",
-            message = "This permanently removes ${formatCurrency(tx.amount)} from trash.",
+            message = typedMessage,
             confirmText = "DELETE FOREVER",
             onConfirm = {
                 onPermanentDelete(tx.id)
                 pendingPermanentDelete = null
             },
-            onDismiss = { pendingPermanentDelete = null }
+            onDismiss = { pendingPermanentDelete = null },
+            typedConfirmText = typedTarget
         )
     }
 
@@ -953,13 +968,52 @@ fun TransactionRow(
 }
 
 @Composable
-fun ConfirmDialog(title: String, message: String, confirmText: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+fun ConfirmDialog(
+    title: String,
+    message: String,
+    confirmText: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+    typedConfirmText: String? = null
+) {
+    var typedInput by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
-        text = { Text(message) },
+        text = {
+            Column {
+                Text(message)
+                if (typedConfirmText != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = ComponentBg,
+                        shape = RoundedCornerShape(20.dp)
+                    ) {
+                        BasicTextField(
+                            value = typedInput,
+                            onValueChange = { typedInput = it },
+                            singleLine = true,
+                            textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 14.sp, color = TextPrimary),
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                            cursorBrush = SolidColor(TextPrimary),
+                            decorationBox = { inner ->
+                                if (typedInput.isEmpty()) Text(
+                                    "Type: $typedConfirmText",
+                                    style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = TextGray)
+                                )
+                                inner()
+                            }
+                        )
+                    }
+                }
+            }
+        },
         confirmButton = {
-            TextButton(onClick = onConfirm) { Text(confirmText, color = SoftRed) }
+            TextButton(
+                onClick = onConfirm,
+                enabled = typedConfirmText == null || typedInput == typedConfirmText
+            ) { Text(confirmText, color = SoftRed) }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("CANCEL") }
