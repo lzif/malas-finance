@@ -44,14 +44,14 @@ jobs:
           chmod +x ./gradlew
           ./gradlew testDebugUnitTest
         env:
-          ORG_GRADLE_PROJECT_KEYSTORE_PASSWORD: malas123
-          ORG_GRADLE_PROJECT_KEY_PASSWORD: malas123
+          ORG_GRADLE_PROJECT_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          ORG_GRADLE_PROJECT_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
 
       - name: Build Release APK
         run: ./gradlew assembleRelease
         env:
-          ORG_GRADLE_PROJECT_KEYSTORE_PASSWORD: malas123
-          ORG_GRADLE_PROJECT_KEY_PASSWORD: malas123
+          ORG_GRADLE_PROJECT_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          ORG_GRADLE_PROJECT_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
 
       - name: Publish Versioned Release
         env:

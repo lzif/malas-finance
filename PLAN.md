@@ -8,7 +8,7 @@ Fix these before cosmetic work. Finance app failure mode must not be lost or cor
 
 - [x] **Make JSON import safe:** Imported transactions currently keep their original IDs, which can collide with existing rows and trigger `REPLACE`. For merge imports, force imported `id = 0` so Room/SQLite assigns new IDs. If exact restore is needed later, make it a separate explicit restore flow.
 - [x] **Prevent orphaned wallet data:** Do not delete a wallet while transactions still reference it. Cheapest safe fix: block deletion and show a message. Only add reassignment if you actually need it.
-- [ ] **Move signing secrets out of Gradle:** Remove keystore passwords from `app/build.gradle.kts`. Use local ignored properties for local builds and GitHub secrets for CI/release builds.
+- [x] **Move signing secrets out of Gradle:** Remove keystore passwords from `app/build.gradle.kts`. Use local ignored properties for local builds and GitHub secrets for CI/release builds.
 
 ## Priority 2: Minimal Refactor For Debuggability
 

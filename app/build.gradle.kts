@@ -27,7 +27,8 @@ android {
     }
   }
 
-// ponytail: release key stays repo-local for personal GitHub Actions builds; move to GitHub secrets before making repo public.
+  // Signing passwords are supplied via project properties (local.properties or env vars).
+  // CI injects them through GitHub secrets; local builds can use local.properties.
   signingConfigs {
     create("release") {
       storeFile = file("malas.keystore")
