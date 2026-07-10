@@ -15,6 +15,13 @@ fun formatCurrency(amount: Long): String {
 
 fun escapeMarkdown(value: String): String = value.replace("|", "\\|").replace("\n", " ")
 
+/**
+ * Generates a Markdown report from the supplied transactions.
+ *
+ * Reports are meant for normal human-readable export, so trash/deleted
+ * entries are intentionally excluded. Only active transactions
+ * (`deletedAt == null`) contribute to the summary and ledger.
+ */
 fun generateMarkdown(transactions: List<Transaction>, range: String): String {
     val activeOnly = transactions.filter { it.deletedAt == null }
     val filtered = filterByRange(activeOnly, range)

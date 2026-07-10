@@ -3,6 +3,13 @@ package com.example.data
 import org.json.JSONArray
 import org.json.JSONObject
 
+/**
+ * Generates a JSON backup from the supplied transactions.
+ *
+ * Backups are intended for data recovery, so they include *all*
+ * transactions passed in, including soft-deleted (trash) entries.
+ * The caller decides whether to pass active records only or a full set.
+ */
 fun generateBackupJson(transactions: List<Transaction>): String {
     val array = JSONArray()
     transactions.forEach { tx ->

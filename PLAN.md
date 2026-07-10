@@ -15,7 +15,7 @@ Fix these before cosmetic work. Finance app failure mode must not be lost or cor
 Keep app simple, but stop making one file responsible for everything.
 
 - [ ] **Split non-UI logic out of `MainScreen.kt`:** Move backup JSON, markdown export, date filtering, and file save helpers into small utility files. Leave Compose UI in screen code.
-- [ ] **Exclude trash from normal exports:** Markdown/report exports should use active transactions only. If backup needs deleted records, name it clearly as full backup and keep that behavior intentional.
+- [x] **Exclude trash from normal exports:** Markdown/report exports should use active transactions only. If backup needs deleted records, name it clearly as full backup and keep that behavior intentional.
 - [ ] **Report file save failures correctly:** In `saveToFile`, show success only after a non-null output stream writes successfully. Null stream or exception should show failure.
 - [ ] **Use stable date parsing locale:** Change fixed-format `SimpleDateFormat("yyyy-MM-dd HH:mm", ...)` calls to `Locale.ROOT` to avoid device-locale surprises.
 

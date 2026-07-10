@@ -190,7 +190,7 @@ fun ExportDialog(transactions: List<Transaction>, onDismiss: () -> Unit, context
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(containerColor = DarkGray, contentColor = Black)
                     ) {
-                        Text("Save JSON Backup", style = TextStyle(fontFamily = FontFamily.Monospace, color = Black))
+                        Text("Save Full JSON Backup (incl. trash)", style = TextStyle(fontFamily = FontFamily.Monospace, color = Black))
                     }
                     Button(
                         onClick = { importLauncher.launch("application/json") },
