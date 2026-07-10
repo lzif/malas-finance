@@ -120,7 +120,7 @@ class MainViewModel(private val repository: TransactionRepository) : ViewModel()
         viewModelScope.launch {
             val refCount = repository.countReferencesToWallet(name)
             if (refCount > 0) {
-                _walletDeleteError.value = "Cannot delete '$name': $refCount active transaction(s) use this wallet"
+                _walletDeleteError.value = "Cannot delete '$name': $refCount transaction(s) still reference this wallet"
             } else {
                 repository.deleteWallet(Wallet(name))
             }

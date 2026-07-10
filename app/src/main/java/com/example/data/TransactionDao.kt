@@ -41,6 +41,11 @@ interface TransactionDao {
     @androidx.room.Delete
     suspend fun deleteWallet(wallet: Wallet)
 
-    @Query("SELECT COUNT(*) FROM transactions WHERE (walletSource = :walletName OR walletDestination = :walletName) AND deletedAt IS NULL")
+    /**
+     * Counts every transaction that references this wallet, including
+     * soft-deleted (trash) rows. Wallets must not be removed while any
+     * record still points to them, otherwise those records become orphaned.
+     */
+    @Query("SELECT COUNT(*) FROM transactions WHERE walletSource = :walletName OR walletDestination = :walletName")
     suspend fun countTransactionsReferencingWallet(walletName: String): Int
 }
