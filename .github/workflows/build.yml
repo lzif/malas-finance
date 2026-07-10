@@ -12,6 +12,7 @@ on:
       - "gradle.properties"
       - "gradlew"
       - "gradlew.bat"
+      - "libs.versions.toml"
       - ".github/workflows/build.yml"
 
 permissions:
