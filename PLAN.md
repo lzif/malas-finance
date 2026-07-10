@@ -14,7 +14,7 @@ Fix these before cosmetic work. Finance app failure mode must not be lost or cor
 
 Keep app simple, but stop making one file responsible for everything.
 
-- [ ] **Split non-UI logic out of `MainScreen.kt`:** Move backup JSON, markdown export, date filtering, and file save helpers into small utility files. Leave Compose UI in screen code.
+- [x] **Split non-UI logic out of `MainScreen.kt`:** Move backup JSON, markdown export, date filtering, and file save helpers into small utility files. Leave Compose UI in screen code.
 - [x] **Exclude trash from normal exports:** Markdown/report exports should use active transactions only. If backup needs deleted records, name it clearly as full backup and keep that behavior intentional.
 - [x] **Report file save failures correctly:** In `saveToFile`, show success only after a non-null output stream writes successfully. Null stream or exception should show failure.
 - [x] **Use stable date parsing locale:** Change fixed-format `SimpleDateFormat("yyyy-MM-dd HH:mm", ...)` calls to `Locale.ROOT` to avoid device-locale surprises.
@@ -23,9 +23,9 @@ Keep app simple, but stop making one file responsible for everything.
 
 Unused code and dependencies make builds slower and failures harder to read.
 
-- [ ] **Remove Roborazzi until used:** Drop plugin and dependencies if there are no screenshot tests.
+- [x] **Remove Roborazzi until used:** Drop plugin and dependencies if there are no screenshot tests.
 - [x] **Replace dummy tests:** Delete generated placeholder tests, or replace them with small tests for import/export/date filtering logic.
-- [ ] **Stop regenerating Gradle wrapper in CI:** Commit wrapper files and let CI use them. Build pipeline should verify repo state, not mutate tooling each run.
+- [x] **Stop regenerating Gradle wrapper in CI:** Commit wrapper files and let CI use them. Build pipeline should verify repo state, not mutate tooling each run.
 
 ## Leave Alone For Now
 

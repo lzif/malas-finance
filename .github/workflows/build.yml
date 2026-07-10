@@ -33,16 +33,14 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Regenerate Gradle Wrapper
-        run: gradle wrapper --gradle-version 9.3.1
+      - name: Make Gradle Wrapper Executable
+        run: chmod +x ./gradlew
 
       - name: Decode Keystore
         run: base64 -d app/malas.keystore.base64 > app/malas.keystore
 
       - name: Test
-        run: |
-          chmod +x ./gradlew
-          ./gradlew testDebugUnitTest
+        run: ./gradlew testDebugUnitTest
         env:
           ORG_GRADLE_PROJECT_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           ORG_GRADLE_PROJECT_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
