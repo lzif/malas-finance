@@ -24,7 +24,7 @@ Keep app simple, but stop making one file responsible for everything.
 Unused code and dependencies make builds slower and failures harder to read.
 
 - [ ] **Remove Roborazzi until used:** Drop plugin and dependencies if there are no screenshot tests.
-- [ ] **Replace dummy tests:** Delete generated placeholder tests, or replace them with small tests for import/export/date filtering logic.
+- [x] **Replace dummy tests:** Delete generated placeholder tests, or replace them with small tests for import/export/date filtering logic.
 - [ ] **Stop regenerating Gradle wrapper in CI:** Commit wrapper files and let CI use them. Build pipeline should verify repo state, not mutate tooling each run.
 
 ## Leave Alone For Now
