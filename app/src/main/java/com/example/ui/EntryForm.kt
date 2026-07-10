@@ -4,6 +4,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -28,6 +30,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
+import androidx.compose.ui.draw.scale
 import com.example.data.Category
 import com.example.data.Transaction
 import com.example.data.TxType
@@ -332,14 +338,29 @@ fun MidSection(
             )
         }
 
-        // SAVE BUTTON
+        // SAVE BUTTON — subtle scale-down on press for tactile feedback
+        val saveInteractionSource = remember { MutableInteractionSource() }
+        val isPressed by saveInteractionSource.collectIsPressedAsState()
+        val saveScale by animateFloatAsState(
+            targetValue = if (isPressed) 0.96f else 1f,
+            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessHigh),
+            label = "saveButtonScale"
+        )
         Button(
             onClick = onSave,
-            modifier = Modifier.fillMaxWidth().height(44.dp).testTag("save_button"),
-            colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue, contentColor = White),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(44.dp)
+                .scale(saveScale)
+                .testTag("save_button"),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = if (isPressed) PrimaryBlue.copy(alpha = 0.85f) else PrimaryBlue,
+                contentColor = White
+            ),
             shape = CircleShape,
             contentPadding = PaddingValues(0.dp),
-            enabled = amountInput.isNotBlank()
+            enabled = amountInput.isNotBlank(),
+            interactionSource = saveInteractionSource
         ) {
             Text(if (editingTransactionId != null) "UPDATE" else "SUBMIT", style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold))
         }

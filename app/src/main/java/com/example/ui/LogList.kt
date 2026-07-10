@@ -4,9 +4,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.List
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -81,16 +84,71 @@ fun BottomSection(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("LOG BOOK", style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, color = TextGray))
-            Text(
-                if (showTrash) "ACTIVE (${transactions.size})" else "TRASH (${deletedTransactions.size})",
-                style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 9.sp, color = TextGray),
-                modifier = Modifier.clickable { showTrash = !showTrash }
-            )
+            // Trash toggle — styled as a chip for better visual affordance
+            val trashCount = deletedTransactions.size
+            val activeCount = transactions.size
+            Surface(
+                modifier = Modifier.clickable { showTrash = !showTrash },
+                shape = CircleShape,
+                color = if (showTrash) SoftRed.copy(alpha = 0.15f) else ComponentBg
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    if (showTrash) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.DeleteSweep,
+                            contentDescription = null,
+                            tint = SoftRed,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                    Text(
+                        if (showTrash) "TRASH ($trashCount)" else "ACTIVE ($activeCount)",
+                        style = TextStyle(
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 9.sp,
+                            color = if (showTrash) SoftRed else TextGray,
+                            fontWeight = FontWeight.Bold
+                        )
+                    )
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(8.dp))
 
         val list = if (showTrash) deletedTransactions else transactions
+        if (list.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = if (showTrash) Icons.AutoMirrored.Filled.DeleteSweep else Icons.Default.List,
+                        contentDescription = null,
+                        tint = TextGray.copy(alpha = 0.5f),
+                        modifier = Modifier.size(32.dp)
+                    )
+                    Text(
+                        if (showTrash) "Trash is empty" else "No transactions yet",
+                        style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 13.sp, color = TextSecondary, fontWeight = FontWeight.Medium)
+                    )
+                    if (!showTrash) {
+                        Text(
+                            "Use the ENTRY tab to log your first transaction",
+                            style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 11.sp, color = TextGray)
+                        )
+                    }
+                }
+            }
+        } else {
         LazyColumn(
             modifier = Modifier.fillMaxWidth(),
             contentPadding = PaddingValues(bottom = 16.dp),
@@ -106,6 +164,7 @@ fun BottomSection(
                     onPermanentDelete = { pendingPermanentDelete = tx }
                 )
             }
+        }
         }
     }
 }

@@ -90,7 +90,9 @@ fun HeaderSection(inflow: Long, outflow: Long, balance: Long, transactions: List
                 }
                 Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.End) {
                     Text("BALANCE", style = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 10.sp, color = TextGray))
-                    Text(formatCurrency(balance), style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 16.sp, fontWeight = FontWeight.Black, color = TextPrimary))
+                    val balanceColor = if (balance < 0) SoftRed else TextPrimary
+                    val balancePrefix = if (balance < 0) "-" else ""
+                    Text("$balancePrefix${formatCurrency(kotlin.math.abs(balance))}", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 16.sp, fontWeight = FontWeight.Black, color = balanceColor))
                 }
             }
 

@@ -174,46 +174,59 @@ fun EntryScreen(viewModel: MainViewModel) {
             Column(modifier = Modifier.fillMaxSize().padding(6.dp)) {
                 Text("QUICK LOGS", style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, color = TextGray))
                 Spacer(modifier = Modifier.height(4.dp))
-                LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    items(transactions) { tx ->
-                        val dateFormat = SimpleDateFormat("HH:mm", Locale.ROOT)
-                        val timeStr = dateFormat.format(Date(tx.timestamp))
-
-                        val displayCategory = if (tx.category == Category.OPS) Category.OPER else tx.category
-                        val color = when (displayCategory) {
-                            Category.CORE -> CoreColor
-                            Category.OPER -> OpsColor
-                            Category.HOBBY -> HobbyColor
-                            Category.VAULT -> VaultColor
-                            else -> TextPrimary
+                if (transactions.isEmpty()) {
+                    Box(
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("No transactions yet", style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 12.sp, color = TextSecondary))
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text("Log your first entry below", style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 10.sp, color = TextGray))
                         }
-                        Surface(
-                            shape = RoundedCornerShape(20.dp),
-                            color = ComponentBg,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(6.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                    }
+                } else {
+                    LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        items(transactions) { tx ->
+                            val dateFormat = SimpleDateFormat("HH:mm", Locale.ROOT)
+                            val timeStr = dateFormat.format(Date(tx.timestamp))
+
+                            val displayCategory = if (tx.category == Category.OPS) Category.OPER else tx.category
+                            val color = when (displayCategory) {
+                                Category.CORE -> CoreColor
+                                Category.OPER -> OpsColor
+                                Category.HOBBY -> HobbyColor
+                                Category.VAULT -> VaultColor
+                                else -> TextPrimary
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(20.dp),
+                                color = ComponentBg,
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text(timeStr, style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 10.sp, color = TextGray))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Surface(color = color.copy(alpha = 0.15f), shape = RoundedCornerShape(percent = 50)) {
-                                    Text(displayCategory, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = color))
-                                }
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    val subcatText = tx.subcategory.ifBlank { "NO SUBCATEGORY" }
-                                    Text(subcatText, style = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = TextPrimary), maxLines = 1)
-                                    if (!tx.notes.isNullOrEmpty()) {
-                                        Text(tx.notes, style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 10.sp, color = TextGray), maxLines = 1)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(timeStr, style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 10.sp, color = TextGray))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Surface(color = color.copy(alpha = 0.15f), shape = RoundedCornerShape(percent = 50)) {
+                                        Text(displayCategory, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = color))
                                     }
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        val subcatText = tx.subcategory.ifBlank { "NO SUBCATEGORY" }
+                                        Text(subcatText, style = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = TextPrimary), maxLines = 1)
+                                        if (!tx.notes.isNullOrEmpty()) {
+                                            Text(tx.notes, style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 10.sp, color = TextGray), maxLines = 1)
+                                        }
+                                    }
+                                    Text(
+                                        text = formatCurrency(tx.amount),
+                                        style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 14.sp, fontWeight = FontWeight.Black, color = if (tx.type == TxType.IN) VaultColor else TextPrimary),
+                                        textAlign = TextAlign.End
+                                    )
                                 }
-                                Text(
-                                    text = formatCurrency(tx.amount),
-                                    style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 14.sp, fontWeight = FontWeight.Black, color = if (tx.type == TxType.IN) VaultColor else TextPrimary),
-                                    textAlign = TextAlign.End
-                                )
                             }
                         }
                     }
