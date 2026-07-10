@@ -41,7 +41,9 @@ android {
     release {
       isCrunchPngs = false
       isMinifyEnabled = false // Biarin false biar lu nggak pusing ngurusin error ProGuard
-      isShrinkResources = true // ITEM-5: drop unreferenced resources; minify stays off per ROAST comment
+      // isShrinkResources intentionally left OFF: AGP 8.7.3 rejects shrinkResources
+      // without minifyEnabled. The ROAST comment above (don't fight ProGuard) wins;
+      // ITEM-5 deferred until we add real keep rules or switch to aapt2 optimize.
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       signingConfig = signingConfigs.getByName("release") // Pakai signature release yang asli
     }
