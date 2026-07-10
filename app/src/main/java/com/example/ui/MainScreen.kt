@@ -1024,18 +1024,32 @@ fun ConfirmDialog(
 @Composable
 fun ExportDialog(transactions: List<Transaction>, onDismiss: () -> Unit, context: Context, onImport: (List<Transaction>) -> Unit) {
     var selectedRange by remember { mutableStateOf("Current Month") }
+    var pendingImport by remember { mutableStateOf<List<Transaction>?>(null) }
     val ranges = listOf("This Week", "Current Month", "All Time")
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
             val imported = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { parseBackupJson(it.readText()) }.orEmpty()
             if (imported.isNotEmpty()) {
-                onImport(imported)
-                Toast.makeText(context, "Imported ${imported.size} entries", Toast.LENGTH_SHORT).show()
+                pendingImport = imported
             } else {
-                Toast.makeText(context, "No entries imported", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "No valid entries — backup may be corrupt", Toast.LENGTH_SHORT).show()
             }
-            onDismiss()
         }
+    }
+
+    val previewList = pendingImport
+    if (previewList != null) {
+        ImportPreviewDialog(
+            transactions = previewList,
+            onConfirm = {
+                onImport(previewList)
+                Toast.makeText(context, "Imported ${previewList.size} entries", Toast.LENGTH_SHORT).show()
+                pendingImport = null
+                onDismiss()
+            },
+            onCancel = { pendingImport = null }
+        )
+        return
     }
 
     Dialog(onDismissRequest = onDismiss) {
@@ -1121,6 +1135,100 @@ fun ExportDialog(transactions: List<Transaction>, onDismiss: () -> Unit, context
                 }
             }
         }
+    }
+}
+
+@Composable
+fun ImportPreviewDialog(
+    transactions: List<Transaction>,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit
+) {
+    val count = transactions.size
+    val minTs = transactions.minOf { it.timestamp }
+    val maxTs = transactions.maxOf { it.timestamp }
+    val totalIn = transactions.filter { it.type == "IN" }.sumOf { it.amount }
+    val totalOut = transactions.filter { it.type == "OUT" }.sumOf { it.amount }
+    val balance = totalIn - totalOut
+    val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.ROOT)
+
+    Dialog(onDismissRequest = onCancel) {
+        Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = MediumGray,
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "IMPORT PREVIEW",
+                    style = TextStyle(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = White)
+                )
+                HorizontalDivider(color = BorderGray)
+
+                PreviewStatRow("$count", "ENTRIES")
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("EARLIEST", style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = TextGray))
+                        Text(dateFormat.format(Date(minTs)), style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = White))
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("LATEST", style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = TextGray))
+                        Text(dateFormat.format(Date(maxTs)), style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = White))
+                    }
+                }
+
+                HorizontalDivider(color = BorderGray)
+
+                PreviewStatRow(formatCurrency(totalIn), "TOTAL IN", VaultColor)
+                PreviewStatRow(formatCurrency(totalOut), "TOTAL OUT", CoreColor)
+                PreviewStatRow(formatCurrency(balance), "NET BALANCE", TextPrimary)
+
+                HorizontalDivider(color = BorderGray)
+
+                Text(
+                    "This will append $count entries to your log. No duplicates will be detected \u2014 double-importing the same backup WILL duplicate your data.",
+                    style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 11.sp, color = TextSecondary)
+                )
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = onCancel,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = DarkGray, contentColor = Black)
+                    ) {
+                        Text("CANCEL", style = TextStyle(fontFamily = FontFamily.Monospace, color = Black))
+                    }
+                    Button(
+                        onClick = onConfirm,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue, contentColor = White)
+                    ) {
+                        Text("IMPORT $count", style = TextStyle(fontFamily = FontFamily.Monospace, color = White))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PreviewStatRow(value: String, label: String, accent: Color = White) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextGray))
+        Text(
+            value,
+            style = TextStyle(
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Black,
+                fontSize = 14.sp,
+                color = accent
+            )
+        )
     }
 }
 
