@@ -26,7 +26,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          lfs: true
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -34,8 +33,16 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Make Gradle Wrapper Executable
-        run: chmod +x ./gradlew
+      - name: Verify or Regenerate Gradle Wrapper
+        run: |
+          chmod +x ./gradlew
+          if ! ./gradlew --version >/dev/null 2>&1; then
+            echo "Wrapper jar is corrupt, regenerating..."
+            gradle wrapper --gradle-version 9.3.1
+            chmod +x ./gradlew
+          else
+            echo "Wrapper jar is valid."
+          fi
 
       - name: Decode Keystore
         run: base64 -d app/malas.keystore.base64 > app/malas.keystore
