@@ -7,7 +7,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material3.*
@@ -99,7 +98,7 @@ fun BottomSection(
                 ) {
                     if (showTrash) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Filled.DeleteSweep,
+                            imageVector = Icons.Default.Delete,
                             contentDescription = null,
                             tint = SoftRed,
                             modifier = Modifier.size(14.dp)
@@ -131,7 +130,7 @@ fun BottomSection(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Icon(
-                        imageVector = if (showTrash) Icons.AutoMirrored.Filled.DeleteSweep else Icons.Default.List,
+                        imageVector = if (showTrash) Icons.Default.Delete else Icons.Default.List,
                         contentDescription = null,
                         tint = TextGray.copy(alpha = 0.5f),
                         modifier = Modifier.size(32.dp)
