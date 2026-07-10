@@ -3,8 +3,10 @@ package com.example.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.example.data.Category
 import com.example.data.Transaction
 import com.example.data.TransactionRepository
+import com.example.data.TxType
 import com.example.data.Wallet
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -50,10 +52,10 @@ class MainViewModel(private val repository: TransactionRepository) : ViewModel()
     private val _notesInput = MutableStateFlow("")
     val notesInput = _notesInput.asStateFlow()
 
-    private val _selectedCategory = MutableStateFlow("CORE")
+    private val _selectedCategory = MutableStateFlow(Category.CORE)
     val selectedCategory = _selectedCategory.asStateFlow()
 
-    private val _transactionType = MutableStateFlow("OUT") // "IN", "OUT", "TRANSFER"
+    private val _transactionType = MutableStateFlow(TxType.OUT)
     val transactionType = _transactionType.asStateFlow()
 
     private val _walletSource = MutableStateFlow("CASH")
@@ -79,7 +81,7 @@ class MainViewModel(private val repository: TransactionRepository) : ViewModel()
     val timestampInput = _timestampInput.asStateFlow()
 
     val frequentLogs: StateFlow<List<Transaction>> = transactions.map { txList ->
-        txList.filter { it.type != "TRANSFER" }.groupBy { "${it.amount}|${it.category}|${it.subcategory}|${it.type}" }
+        txList.filter { it.type != TxType.TRANSFER }.groupBy { "${it.amount}|${it.category}|${it.subcategory}|${it.type}" }
             .map { entry -> entry.value.first() to entry.value.size }
             .sortedByDescending { it.second }
             .map { it.first }
@@ -171,12 +173,12 @@ class MainViewModel(private val repository: TransactionRepository) : ViewModel()
         if (_transactionType.value != type) {
             _transactionType.value = type
             _subcategoryInput.value = ""
-            if (type == "OUT") {
-                _selectedCategory.value = "CORE"
-            } else if (type == "IN") {
-                _selectedCategory.value = "GAJI"
-            } else if (type == "TRANSFER") {
-                _selectedCategory.value = "TRANSFER"
+            if (type == TxType.OUT) {
+                _selectedCategory.value = Category.CORE
+            } else if (type == TxType.IN) {
+                _selectedCategory.value = Category.GAJI
+            } else if (type == TxType.TRANSFER) {
+                _selectedCategory.value = Category.TRANSFER
                 _walletDestination.value = wallets.value.firstOrNull()?.name ?: "BANK"
                 _feeInput.value = ""
             }
@@ -224,13 +226,13 @@ class MainViewModel(private val repository: TransactionRepository) : ViewModel()
         if (amount != null && amount > 0 && timestamp != null) {
             val editId = _editingTransactionId.value
             
-            val isTransfer = _transactionType.value == "TRANSFER"
-            
+            val isTransfer = _transactionType.value == TxType.TRANSFER
+
             val tx = Transaction(
                 id = editId ?: 0,
                 amount = amount,
                 type = _transactionType.value,
-                category = if (isTransfer) "TRANSFER" else _selectedCategory.value,
+                category = if (isTransfer) Category.TRANSFER else _selectedCategory.value,
                 subcategory = if (isTransfer) "" else _subcategoryInput.value.trim(),
                 notes = _notesInput.value.trim().takeIf { it.isNotEmpty() },
                 timestamp = timestamp,

@@ -41,6 +41,7 @@ android {
     release {
       isCrunchPngs = false
       isMinifyEnabled = false // Biarin false biar lu nggak pusing ngurusin error ProGuard
+      isShrinkResources = true // ITEM-5: drop unreferenced resources; minify stays off per ROAST comment
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       signingConfig = signingConfigs.getByName("release") // Pakai signature release yang asli
     }
