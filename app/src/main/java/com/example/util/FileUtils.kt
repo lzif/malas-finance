@@ -29,15 +29,25 @@ fun saveToFile(context: Context, text: String, filename: String, mimeType: Strin
         Toast.makeText(context, "Failed to save file", Toast.LENGTH_SHORT).show()
         return
     }
-    try {
-        val stream = resolver.openOutputStream(uri)
-        if (stream == null) {
-            Toast.makeText(context, "Failed to save file", Toast.LENGTH_SHORT).show()
-            return
-        }
-        stream.use { it.write(text.toByteArray()) }
+    val wrote = try {
+        resolver.openOutputStream(uri)?.use { stream ->
+            stream.write(text.toByteArray())
+            true
+        } ?: false
+    } catch (e: Exception) {
+        false
+    }
+
+    if (wrote) {
         Toast.makeText(context, "Saved to Downloads", Toast.LENGTH_SHORT).show()
-    } catch (e: IOException) {
+    } else {
         Toast.makeText(context, "Failed to save file", Toast.LENGTH_SHORT).show()
+        // Best-effort cleanup of the partial/empty entry so the user isn't
+        // left with a broken file in Downloads.
+        try {
+            resolver.delete(uri, null, null)
+        } catch (_: Exception) {
+            // Ignore cleanup failures; the original error was already reported.
+        }
     }
 }
