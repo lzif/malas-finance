@@ -12,8 +12,8 @@ android {
     applicationId = "com.aistudio.malasfinance.mfxz"
     minSdk = 24
     targetSdk = 36
-    versionCode = 12
-    versionName = "1.5.6"
+    versionCode = 13
+    versionName = "1.5.7"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
