@@ -66,9 +66,9 @@ class MonthlySummaryTest {
         )
         val result = summarizeByMonth(txs)
         assertEquals(1, result.size)
-        assertEquals(300L, result[0].totalIn)
+        assertEquals(100L, result[0].totalIn)
         assertEquals(500L, result[0].totalOut)
-        assertEquals(-200L, result[0].netBalance)
+        assertEquals(-400L, result[0].netBalance)
         assertEquals(3, result[0].entryCount)
     }
 
@@ -113,11 +113,15 @@ class MonthlySummaryTest {
             makeTx(millisFor(2026, Calendar.JULY, 10), amount = 1000L, type = TxType.IN),
             makeTx(millisFor(2026, Calendar.JULY, 20), amount = 400L, type = TxType.OUT)
         )
+        // TRANSFER contributes to entryCount (it is still a logged entry) but
+        // stays out of totalIn/totalOut so wallet-to-wallet moves do not
+        // distort the monthly net.
         val result = summarizeByMonth(txs)
         assertEquals(1, result.size)
         assertEquals(1000L, result[0].totalIn)
         assertEquals(400L, result[0].totalOut)
-        assertEquals(2, result[0].entryCount)
+        assertEquals(600L, result[0].netBalance)
+        assertEquals(3, result[0].entryCount)
     }
 
     private fun millisFor(year: Int, month: Int, day: Int): Long {
