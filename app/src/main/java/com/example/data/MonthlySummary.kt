@@ -12,7 +12,9 @@ import java.util.Locale
  * - [label] is a `"MMM yyyy"` display label rendered in Locale.ROOT so the
  *   text does not drift across device locales.
  * - [totalIn] / [totalOut] ignore TRANSFER rows so net movement between
- *   wallets does not skew totals.
+ *   wallets does not skew totals. Conversely, [entryCount] *includes*
+ *   TRANSFER rows because they are still entries the user logged — the
+ *   card labels "X entries" so transfers should remain visible there.
  */
 data class MonthlySummary(
     val yearMonthKey: String,
