@@ -585,6 +585,19 @@ private fun CustomAmountDialog(
                         }
                     )
                 }
+                // Quick-pick ADD chips — common amounts are one tap, the
+                // typed input below is for non-standard values. Each chip
+                // applies immediately and dismisses the dialog so the goal
+                // card can re-render with the new currentAmount.
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    QuickStepChip(label = "+10k", onClick = { onAdd(10_000L); onDismiss() })
+                    QuickStepChip(label = "+50k", onClick = { onAdd(50_000L); onDismiss() })
+                    QuickStepChip(label = "+100k", onClick = { onAdd(100_000L); onDismiss() })
+                    QuickStepChip(label = "+500k", onClick = { onAdd(500_000L); onDismiss() })
+                }
                 if (parsedAmount > 0L) {
                     Text(
                         "= ${formatCurrency(parsedAmount)}",
