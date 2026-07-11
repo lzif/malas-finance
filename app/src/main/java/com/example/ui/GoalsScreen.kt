@@ -534,3 +534,86 @@ private fun LabeledNumericField(label: String, value: String, onChange: (String)
         }
     }
 }
+
+/**
+ * Extracted as a separate composable so its `remember` slots reset on
+ * every dialog open. Calling this from inside a `?.let` block on a
+ * parent state would otherwise keep the slot alive in the parent's
+ * composition table and the previous typed value would pre-fill on
+ * the next open.
+ */
+@Composable
+private fun CustomAmountDialog(
+    goal: Goal,
+    onDismiss: () -> Unit,
+    onAdd: (Long) -> Unit,
+    onSubtract: (Long) -> Unit
+) {
+    var customText by remember { mutableStateOf("") }
+    val parsedAmount = customText.toLongOrNull() ?: 0L
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                "CUSTOM AMOUNT",
+                style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Adjust '${goal.name}' by any amount.",
+                    style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 12.sp, color = TextSecondary)
+                )
+                Surface(color = ComponentBg, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
+                    BasicTextField(
+                        value = customText,
+                        onValueChange = { input -> customText = input.filter { c -> c.isDigit() } },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                        cursorBrush = SolidColor(TextPrimary),
+                        decorationBox = { inner ->
+                            if (customText.isEmpty()) {
+                                Text(
+                                    "e.g. 100000",
+                                    style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = TextGray)
+                                )
+                            }
+                            inner()
+                        }
+                    )
+                }
+                if (parsedAmount > 0L) {
+                    Text(
+                        "= ${formatCurrency(parsedAmount)}",
+                        style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = TextGray)
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = {
+                        onSubtract(parsedAmount)
+                        onDismiss()
+                    },
+                    enabled = parsedAmount > 0L
+                ) { Text("SUBTRACT", style = TextStyle(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)) }
+                Button(
+                    onClick = {
+                        onAdd(parsedAmount)
+                        onDismiss()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue, contentColor = White),
+                    enabled = parsedAmount > 0L
+                ) { Text("ADD", style = TextStyle(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)) }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("CANCEL") }
+        }
+    )
+}
