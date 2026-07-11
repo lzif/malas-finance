@@ -184,7 +184,7 @@ fun EntryScreen(viewModel: MainViewModel) {
             .padding(6.dp)
     ) {
         HeaderSection(
-            totalInflow = totalInflow,
+            inflow = totalInflow,
             outflow = totalOutflow,
             balance = balance,
             transactions = transactions + deletedTransactions,
