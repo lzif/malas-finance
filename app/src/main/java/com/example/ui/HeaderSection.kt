@@ -20,19 +20,30 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.BuildConfig
+import com.example.data.BackupData
 import com.example.data.Category
+import com.example.data.Goal
 import com.example.data.Transaction
 import com.example.data.TxType
 import com.example.data.formatCurrency
 import com.example.ui.theme.*
 
 @Composable
-fun HeaderSection(inflow: Long, outflow: Long, balance: Long, transactions: List<Transaction>, context: Context, onImport: (List<Transaction>) -> Unit) {
+fun HeaderSection(
+    inflow: Long,
+    outflow: Long,
+    balance: Long,
+    transactions: List<Transaction>,
+    goals: List<Goal>,
+    context: Context,
+    onImport: (BackupData) -> Unit
+) {
     var showExportDialog by remember { mutableStateOf(false) }
 
     if (showExportDialog) {
         ExportDialog(
             transactions = transactions,
+            goals = goals,
             onDismiss = { showExportDialog = false },
             context = context,
             onImport = onImport

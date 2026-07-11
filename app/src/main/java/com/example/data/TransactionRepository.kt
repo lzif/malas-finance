@@ -36,6 +36,8 @@ class TransactionRepository(
 
     suspend fun insertGoal(goal: Goal) = goalDao.insertGoal(goal)
 
+    suspend fun insertGoals(goals: List<Goal>) = goalDao.insertGoals(goals)
+
     suspend fun updateGoal(goal: Goal) = goalDao.updateGoal(goal)
 
     suspend fun softDeleteGoalById(id: Int) = goalDao.softDeleteGoalById(id, System.currentTimeMillis())

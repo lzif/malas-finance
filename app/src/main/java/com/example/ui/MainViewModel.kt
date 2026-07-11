@@ -312,6 +312,12 @@ class MainViewModel(private val repository: TransactionRepository) : ViewModel()
         }
     }
 
+    fun importGoals(goals: List<Goal>) {
+        viewModelScope.launch {
+            repository.insertGoals(goals)
+        }
+    }
+
     fun deleteTransaction(id: Int) {
         viewModelScope.launch {
             repository.deleteById(id)

@@ -31,6 +31,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.example.data.BackupData
 import com.example.data.Category
 import com.example.data.Transaction
 import com.example.data.TxType
@@ -160,6 +161,9 @@ fun EntryScreen(viewModel: MainViewModel) {
     val feeInput by viewModel.feeInput.collectAsStateWithLifecycle()
     val timestampInput by viewModel.timestampInput.collectAsStateWithLifecycle()
 
+    val activeGoals by viewModel.activeGoals.collectAsStateWithLifecycle()
+    val deletedGoals by viewModel.deletedGoals.collectAsStateWithLifecycle()
+
     val editingTransactionId by viewModel.editingTransactionId.collectAsStateWithLifecycle()
     val walletDeleteError by viewModel.walletDeleteError.collectAsStateWithLifecycle()
 
@@ -179,7 +183,18 @@ fun EntryScreen(viewModel: MainViewModel) {
             }
             .padding(6.dp)
     ) {
-        HeaderSection(totalInflow, totalOutflow, balance, transactions + deletedTransactions, context, viewModel::importTransactions)
+        HeaderSection(
+            totalInflow = totalInflow,
+            outflow = totalOutflow,
+            balance = balance,
+            transactions = transactions + deletedTransactions,
+            goals = activeGoals + deletedGoals,
+            context = context,
+            onImport = { backupData: BackupData ->
+                viewModel.importTransactions(backupData.transactions)
+                viewModel.importGoals(backupData.goals)
+            }
+        )
 
         Spacer(modifier = Modifier.height(6.dp))
 

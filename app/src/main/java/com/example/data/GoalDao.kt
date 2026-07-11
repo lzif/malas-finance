@@ -19,6 +19,14 @@ interface GoalDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertGoal(goal: Goal)
 
+    /**
+     * Bulk-insert goals, used by JSON backup import. Combined with
+     * [parseBackupJson]'s id=0 forced reset, this is a safe append
+     * even when the source backup lists explicit id values.
+     */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertGoals(goals: List<Goal>)
+
     @Update
     suspend fun updateGoal(goal: Goal)
 

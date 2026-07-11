@@ -21,6 +21,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.example.data.BackupData
+import com.example.data.Goal
 import com.example.data.Transaction
 import com.example.data.TxType
 import com.example.data.formatCurrency
@@ -89,28 +91,38 @@ fun ConfirmDialog(
 }
 
 @Composable
-fun ExportDialog(transactions: List<Transaction>, onDismiss: () -> Unit, context: Context, onImport: (List<Transaction>) -> Unit) {
+fun ExportDialog(
+    transactions: List<Transaction>,
+    goals: List<Goal>,
+    onDismiss: () -> Unit,
+    context: Context,
+    onImport: (BackupData) -> Unit
+) {
     var selectedRange by remember { mutableStateOf("Current Month") }
-    var pendingImport by remember { mutableStateOf<List<Transaction>?>(null) }
+    var pendingImport by remember { mutableStateOf<BackupData?>(null) }
     val ranges = listOf("This Week", "Current Month", "All Time")
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
-            val imported = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { parseBackupJson(it.readText()) }.orEmpty()
-            if (imported.isNotEmpty()) {
-                pendingImport = imported
+            val text = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }.orEmpty()
+            // runCatching converts JSONException into a soft failure so the
+            // dialog can show a "backup may be corrupt" toast instead of
+            // crashing the activity.
+            val parsed = if (text.isNotEmpty()) runCatching { parseBackupJson(text) }.getOrNull() else null
+            if (parsed != null && (parsed.transactions.isNotEmpty() || parsed.goals.isNotEmpty())) {
+                pendingImport = parsed
             } else {
                 Toast.makeText(context, "No valid entries — backup may be corrupt", Toast.LENGTH_SHORT).show()
             }
         }
     }
 
-    val previewList = pendingImport
-    if (previewList != null) {
+    pendingImport?.let { backup ->
         ImportPreviewDialog(
-            transactions = previewList,
+            backupData = backup,
             onConfirm = {
-                onImport(previewList)
-                Toast.makeText(context, "Imported ${previewList.size} entries", Toast.LENGTH_SHORT).show()
+                onImport(backup)
+                val total = backup.transactions.size + backup.goals.size
+                Toast.makeText(context, "Imported $total entries", Toast.LENGTH_SHORT).show()
                 pendingImport = null
                 onDismiss()
             },
@@ -183,14 +195,14 @@ fun ExportDialog(transactions: List<Transaction>, onDismiss: () -> Unit, context
                     }
                     Button(
                         onClick = {
-                            val json = generateBackupJson(transactions)
+                            val json = generateBackupJson(transactions, goals)
                             saveToFile(context, json, "MalasFinance_Backup.json", "application/json")
                             onDismiss()
                         },
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(containerColor = DarkGray, contentColor = Black)
                     ) {
-                        Text("Save Full JSON Backup (incl. trash)", style = TextStyle(fontFamily = FontFamily.Monospace, color = Black))
+                        Text("Save Full JSON Backup (transactions + goals, incl. trash)", style = TextStyle(fontFamily = FontFamily.Monospace, color = Black))
                     }
                     Button(
                         onClick = { importLauncher.launch("application/json") },
@@ -207,17 +219,23 @@ fun ExportDialog(transactions: List<Transaction>, onDismiss: () -> Unit, context
 
 @Composable
 fun ImportPreviewDialog(
-    transactions: List<Transaction>,
+    backupData: BackupData,
     onConfirm: () -> Unit,
     onCancel: () -> Unit
 ) {
-    val count = transactions.size
-    val minTs = transactions.minOf { it.timestamp }
-    val maxTs = transactions.maxOf { it.timestamp }
+    val transactions = backupData.transactions
+    val goals = backupData.goals
+    val txCount = transactions.size
+    val goalCount = goals.size
+    val totalCount = txCount + goalCount
+    val minTs = if (transactions.isNotEmpty()) transactions.minOf { it.timestamp } else 0L
+    val maxTs = if (transactions.isNotEmpty()) transactions.maxOf { it.timestamp } else 0L
     val totalIn = transactions.filter { it.type == TxType.IN }.sumOf { it.amount }
     val totalOut = transactions.filter { it.type == TxType.OUT }.sumOf { it.amount }
     val balance = totalIn - totalOut
     val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.ROOT)
+    val goalSavedTotal = goals.sumOf { it.currentAmount }
+    val goalTargetTotal = goals.sumOf { it.targetAmount }
 
     Dialog(onDismissRequest = onCancel) {
         Surface(
@@ -232,29 +250,41 @@ fun ImportPreviewDialog(
                 )
                 HorizontalDivider(color = BorderGray)
 
-                PreviewStatRow("$count", "ENTRIES")
+                PreviewStatRow("$txCount", "TRANSACTIONS")
+                PreviewStatRow("$goalCount", "GOALS")
 
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("EARLIEST", style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = TextGray))
-                        Text(dateFormat.format(Date(minTs)), style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = White))
-                    }
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("LATEST", style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = TextGray))
-                        Text(dateFormat.format(Date(maxTs)), style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = White))
+                if (transactions.isNotEmpty()) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("EARLIEST", style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = TextGray))
+                            Text(dateFormat.format(Date(minTs)), style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = White))
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("LATEST", style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = TextGray))
+                            Text(dateFormat.format(Date(maxTs)), style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = White))
+                        }
                     }
                 }
 
                 HorizontalDivider(color = BorderGray)
 
-                PreviewStatRow(formatCurrency(totalIn), "TOTAL IN", VaultColor)
-                PreviewStatRow(formatCurrency(totalOut), "TOTAL OUT", CoreColor)
-                PreviewStatRow(formatCurrency(balance), "NET BALANCE", TextPrimary)
+                if (transactions.isNotEmpty()) {
+                    PreviewStatRow(formatCurrency(totalIn), "TOTAL IN", VaultColor)
+                    PreviewStatRow(formatCurrency(totalOut), "TOTAL OUT", CoreColor)
+                    PreviewStatRow(formatCurrency(balance), "NET BALANCE", TextPrimary)
+                }
+                if (goals.isNotEmpty()) {
+                    PreviewStatRow(
+                        "${formatCurrency(goalSavedTotal)} / ${formatCurrency(goalTargetTotal)}",
+                        "GOAL SAVED / TARGET",
+                        PrimaryBlue
+                    )
+                }
 
                 HorizontalDivider(color = BorderGray)
 
                 Text(
-                    "This will append $count entries to your log. No duplicates will be detected \u2014 double-importing the same backup WILL duplicate your data.",
+                    "This will append $totalCount entries. No duplicates will be detected — double-importing the same backup WILL duplicate your data.",
                     style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 11.sp, color = TextSecondary)
                 )
 
@@ -271,7 +301,7 @@ fun ImportPreviewDialog(
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue, contentColor = White)
                     ) {
-                        Text("IMPORT $count", style = TextStyle(fontFamily = FontFamily.Monospace, color = White))
+                        Text("IMPORT $totalCount", style = TextStyle(fontFamily = FontFamily.Monospace, color = White))
                     }
                 }
             }
