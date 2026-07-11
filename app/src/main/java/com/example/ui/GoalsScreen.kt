@@ -52,6 +52,7 @@ fun GoalsScreen(viewModel: MainViewModel) {
     var showTrash by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Goal?>(null) }
     var creating by remember { mutableStateOf(false) }
+    var customAmountFor by remember { mutableStateOf<Goal?>(null) }
     var pendingSoftDelete by remember { mutableStateOf<Goal?>(null) }
     var pendingPermanentDelete by remember { mutableStateOf<Goal?>(null) }
 
@@ -109,6 +110,20 @@ fun GoalsScreen(viewModel: MainViewModel) {
                 editing = null
             },
             onDismiss = { editing = null }
+        )
+    }
+
+    // Custom amount dialog — body is a private composable so its `remember`
+    // slots are tied to customAmountFor != null and reset on each open
+    // (avoids the conditional remember anti-pattern inside a `?.let` block).
+    // Reuses viewModel.incrementGoal / decrementGoal so the per-goal Mutex
+    // and DB-snapshot read from v1.5.4 still apply to arbitrary amounts.
+    customAmountFor?.let { g ->
+        CustomAmountDialog(
+            goal = g,
+            onDismiss = { customAmountFor = null },
+            onAdd = { amount -> viewModel.incrementGoal(g.id, amount) },
+            onSubtract = { amount -> viewModel.decrementGoal(g.id, amount) }
         )
     }
 
@@ -218,6 +233,7 @@ fun GoalsScreen(viewModel: MainViewModel) {
                         isTrash = showTrash,
                         onIncrement = { viewModel.incrementGoal(goal.id, QUICK_STEP) },
                         onDecrement = { viewModel.decrementGoal(goal.id, QUICK_STEP) },
+                        onCustom = { customAmountFor = goal },
                         // In active mode, onEdit opens the editor; in trash
                         // mode, the same tap is restore (single-affordance).
                         onEdit = { if (showTrash) viewModel.restoreGoal(goal.id) else editing = goal },
@@ -238,6 +254,7 @@ private fun GoalCard(
     isTrash: Boolean,
     onIncrement: () -> Unit,
     onDecrement: () -> Unit,
+    onCustom: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -357,6 +374,7 @@ private fun GoalCard(
                 ) {
                     QuickStepChip(label = "-50k", onClick = onDecrement)
                     QuickStepChip(label = "+50k", onClick = onIncrement)
+                    QuickStepChip(label = "CUSTOM", onClick = onCustom)
                     Spacer(modifier = Modifier.weight(1f))
                     Icon(
                         imageVector = Icons.Default.Edit,
