@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.data.Category
+import com.example.data.Goal
 import com.example.data.MonthlySummary
 import com.example.data.Transaction
 import com.example.data.TransactionRepository
@@ -18,9 +19,12 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 
 class MainViewModel(private val repository: TransactionRepository) : ViewModel() {
 
@@ -39,6 +43,20 @@ class MainViewModel(private val repository: TransactionRepository) : ViewModel()
         )
 
     val deletedTransactions: StateFlow<List<Transaction>> = repository.deletedTransactions
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    val activeGoals: StateFlow<List<Goal>> = repository.activeGoals
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    val deletedGoals: StateFlow<List<Goal>> = repository.deletedGoals
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -74,6 +92,15 @@ class MainViewModel(private val repository: TransactionRepository) : ViewModel()
 
     private val _walletDeleteError = MutableStateFlow<String?>(null)
     val walletDeleteError = _walletDeleteError.asStateFlow()
+
+    /**
+     * Per-goal mutexes serialising increment / decrement so that fast
+     * double-tap clicks always read the latest DB row before computing the
+     * next value. Without this guard, two clicks fired before the StateFlow
+     * emits the previous write would race on the same stale snapshot and
+     * silently drop the second update.
+     */
+    private val goalLocks = ConcurrentHashMap<Int, Mutex>()
 
     private val timestampFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.ROOT).apply {
         isLenient = false
@@ -288,6 +315,113 @@ class MainViewModel(private val repository: TransactionRepository) : ViewModel()
     fun deleteTransaction(id: Int) {
         viewModelScope.launch {
             repository.deleteById(id)
+        }
+    }
+
+    // ---- Savings Goals -------------------------------------------------
+    // currentAmount is the user-maintained counter, decoupled from
+    // transactions/wallets intentionally. completedAt auto-stamps when
+    // currentAmount >= targetAmount, and is cleared if the user drops
+    // back below via decrementGoal.
+
+    fun addGoal(name: String, targetAmount: Long, currentAmount: Long = 0L) {
+        val trimmed = name.trim()
+        val safeTarget = targetAmount.coerceAtLeast(1L)
+        val safeCurrent = currentAmount.coerceAtLeast(0L)
+        if (trimmed.isEmpty()) return
+        val isCompleted = safeCurrent >= safeTarget
+        val completedAt = if (isCompleted) System.currentTimeMillis() else null
+        viewModelScope.launch {
+            repository.insertGoal(
+                Goal(
+                    name = trimmed,
+                    targetAmount = safeTarget,
+                    currentAmount = safeCurrent,
+                    completedAt = completedAt
+                )
+            )
+        }
+    }
+
+    fun updateGoal(goal: Goal) {
+        val safeTarget = goal.targetAmount.coerceAtLeast(1L)
+        val safeCurrent = goal.currentAmount.coerceAtLeast(0L)
+        val isCompletedNow = safeCurrent >= safeTarget
+        val completedAt = when {
+            isCompletedNow && goal.completedAt == null -> System.currentTimeMillis()
+            !isCompletedNow -> null
+            else -> goal.completedAt
+        }
+        viewModelScope.launch {
+            repository.updateGoal(
+                goal.copy(
+                    targetAmount = safeTarget,
+                    currentAmount = safeCurrent,
+                    completedAt = completedAt
+                )
+            )
+        }
+    }
+
+    fun incrementGoal(id: Int, byAmount: Long = 50_000L) {
+        viewModelScope.launch {
+            // Per-goal mutex serialises the read-modify-write so a fast
+            // double-tap "+50k" cannot read the same stale row twice.
+            val lock = goalLocks.getOrPut(id) { Mutex() }
+            lock.withLock {
+                val current = repository.getGoalById(id) ?: return@withLock
+                val newAmount = (current.currentAmount + byAmount).coerceAtLeast(0L)
+                val isCompletedNow = newAmount >= current.targetAmount
+                val completedAt = when {
+                    isCompletedNow && current.completedAt == null -> System.currentTimeMillis()
+                    isCompletedNow -> current.completedAt
+                    else -> null
+                }
+                repository.updateGoal(
+                    current.copy(
+                        currentAmount = newAmount,
+                        completedAt = completedAt
+                    )
+                )
+            }
+        }
+    }
+
+    fun decrementGoal(id: Int, byAmount: Long = 50_000L) {
+        viewModelScope.launch {
+            val lock = goalLocks.getOrPut(id) { Mutex() }
+            lock.withLock {
+                val current = repository.getGoalById(id) ?: return@withLock
+                val newAmount = (current.currentAmount - byAmount).coerceAtLeast(0L)
+                val isCompletedNow = newAmount >= current.targetAmount
+                // Decrement can revoke completion: clear the stamp if we
+                // drop back below target; keep it untouched if we stay >= target.
+                val completedAt = if (isCompletedNow) current.completedAt else null
+                repository.updateGoal(
+                    current.copy(
+                        currentAmount = newAmount,
+                        completedAt = completedAt
+                    )
+                )
+            }
+        }
+    }
+
+    fun softDeleteGoal(id: Int) {
+        viewModelScope.launch {
+            repository.softDeleteGoalById(id)
+        }
+    }
+
+    fun restoreGoal(id: Int) {
+        viewModelScope.launch {
+            repository.restoreGoalById(id)
+        }
+    }
+
+    fun deleteGoal(id: Int) {
+        viewModelScope.launch {
+            repository.deleteGoalById(id)
         }
     }
 }

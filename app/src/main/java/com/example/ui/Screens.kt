@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.getValue
@@ -94,6 +95,25 @@ fun MainScreen(viewModel: MainViewModel) {
                         unselectedTextColor = TextGray
                     )
                 )
+                NavigationBarItem(
+                    selected = currentRoute == "goals",
+                    onClick = {
+                        navController.navigate("goals") {
+                            popUpTo(navController.graph.startDestinationId) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                    icon = { Icon(Icons.Default.Star, contentDescription = "Goals") },
+                    label = { Text("GOALS", style = TextStyle(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Bold, fontSize = 10.sp)) },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = White,
+                        selectedTextColor = PrimaryBlue,
+                        indicatorColor = PrimaryBlue,
+                        unselectedIconColor = TextGray,
+                        unselectedTextColor = TextGray
+                    )
+                )
             }
         }
     ) { paddingValues ->
@@ -113,6 +133,9 @@ fun MainScreen(viewModel: MainViewModel) {
                         restoreState = true
                     }
                 })
+            }
+            composable("goals") {
+                GoalsScreen(viewModel = viewModel)
             }
         }
     }
