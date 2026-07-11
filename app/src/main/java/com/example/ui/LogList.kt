@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.BIG_DELETE_THRESHOLD
 import com.example.data.Category
+import com.example.data.MonthlySummary
 import com.example.data.Transaction
 import com.example.data.TxType
 import com.example.data.formatCurrency
@@ -33,6 +34,7 @@ import java.util.Locale
 fun BottomSection(
     transactions: List<Transaction>,
     deletedTransactions: List<Transaction>,
+    monthlySummaries: List<MonthlySummary>,
     onDelete: (Int) -> Unit,
     onRestore: (Int) -> Unit,
     onPermanentDelete: (Int) -> Unit,
@@ -118,6 +120,13 @@ fun BottomSection(
         }
 
         Spacer(modifier = Modifier.height(8.dp))
+
+        // Monthly overview only makes sense for the active ledger; hide it
+        // when viewing trash so totals never mix deleted entries with live ones.
+        if (!showTrash && monthlySummaries.isNotEmpty()) {
+            MonthlySummarySection(monthlySummaries)
+            Spacer(modifier = Modifier.height(10.dp))
+        }
 
         val list = if (showTrash) deletedTransactions else transactions
         if (list.isEmpty()) {

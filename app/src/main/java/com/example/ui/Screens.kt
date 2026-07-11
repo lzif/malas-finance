@@ -287,6 +287,7 @@ fun EntryScreen(viewModel: MainViewModel) {
 fun LogsScreen(viewModel: MainViewModel, onNavigateToEntry: () -> Unit) {
     val transactions by viewModel.transactions.collectAsStateWithLifecycle()
     val deletedTransactions by viewModel.deletedTransactions.collectAsStateWithLifecycle()
+    val monthlySummaries by viewModel.monthlySummaries.collectAsStateWithLifecycle()
 
     Column(
         modifier = Modifier
@@ -296,6 +297,7 @@ fun LogsScreen(viewModel: MainViewModel, onNavigateToEntry: () -> Unit) {
         BottomSection(
             transactions = transactions,
             deletedTransactions = deletedTransactions,
+            monthlySummaries = monthlySummaries,
             onDelete = viewModel::softDeleteTransaction,
             onRestore = viewModel::restoreTransaction,
             onPermanentDelete = viewModel::deleteTransaction,

@@ -1,6 +1,6 @@
 # MalasFinance
 
-[![Version](https://img.shields.io/badge/version-1.5.2-blue)](app/build.gradle.kts)
+[![Version](https://img.shields.io/badge/version-1.5.3-blue)](app/build.gradle.kts)
 [![Build](https://img.shields.io/github/actions/workflow/status/lzif/malas-finance/build.yml?branch=main&label=latest%20build)](https://github.com/lzif/malas-finance/actions/workflows/build.yml)
 [![Latest Release](https://img.shields.io/github/v/release/lzif/malas-finance?label=latest%20release&color=success)](https://github.com/lzif/malas-finance/releases/latest)
 

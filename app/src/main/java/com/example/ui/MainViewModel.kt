@@ -4,10 +4,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.data.Category
+import com.example.data.MonthlySummary
 import com.example.data.Transaction
 import com.example.data.TransactionRepository
 import com.example.data.TxType
 import com.example.data.Wallet
+import com.example.data.summarizeByMonth
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -87,6 +89,15 @@ class MainViewModel(private val repository: TransactionRepository) : ViewModel()
             .map { it.first }
             .filter { it.subcategory.isNotBlank() }
             .take(3)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /**
+     * Per-month summary derived from the active (non-deleted) transaction
+     * flow. View code should pass this into BottomSection so the overview
+     * stays in sync with what the user can actually see and edit.
+     */
+    val monthlySummaries: StateFlow<List<MonthlySummary>> = transactions.map { txList ->
+        summarizeByMonth(txList)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _customSubcategories = MutableStateFlow<Map<String, Set<String>>>(emptyMap())
