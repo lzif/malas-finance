@@ -1,0 +1,459 @@
+:root {
+  --bg: #14141c;
+  --surface: #1d1d28;
+  --surface-2: #262634;
+  --border: #33333f;
+  --text: #f2f2f5;
+  --text-dim: #9797a8;
+  --accent: #6c8cff;
+  --danger: #ff6b6b;
+
+  --band-tenang: #9797a8;
+  --band-waspada: #e0b039;
+  --band-mendesak: #f08a3c;
+  --band-terlampaui: #ff5c5c;
+
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f5f5f8;
+    --surface: #ffffff;
+    --surface-2: #eeeef3;
+    --border: #dcdce4;
+    --text: #17171f;
+    --text-dim: #6b6b7a;
+    color-scheme: light;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  overscroll-behavior-y: none;
+}
+
+#app {
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+button {
+  font-family: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 16px 24px;
+  gap: 14px;
+}
+
+/* ---- Anchor number ---- */
+
+.anchor {
+  padding: 18px 16px;
+  border-radius: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  transition: background 0.25s, border-color 0.25s;
+}
+
+.anchor-value {
+  font-size: 2.6rem;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--band-tenang);
+  transition: color 0.25s, font-weight 0.25s;
+}
+
+.anchor.band-tenang .anchor-value { color: var(--text); font-weight: 600; }
+.anchor.band-waspada .anchor-value { color: var(--band-waspada); font-weight: 700; }
+.anchor.band-mendesak .anchor-value { color: var(--band-mendesak); font-weight: 800; }
+.anchor.band-terlampaui .anchor-value { color: var(--band-terlampaui); font-weight: 800; }
+
+.anchor.band-waspada { border-color: var(--band-waspada); }
+.anchor.band-mendesak { border-color: var(--band-mendesak); background: color-mix(in srgb, var(--band-mendesak) 8%, var(--surface)); }
+.anchor.band-terlampaui { border-color: var(--band-terlampaui); background: color-mix(in srgb, var(--band-terlampaui) 12%, var(--surface)); }
+
+.anchor-sub {
+  margin-top: 6px;
+  font-size: 0.95rem;
+  color: var(--text-dim);
+}
+
+.anchor-sub.danger {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* ---- Mode row ---- */
+
+.mode-row {
+  display: flex;
+  gap: 8px;
+}
+
+.mode-btn {
+  flex: 1;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.mode-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+/* ---- Keypad display + grid ---- */
+
+.keypad-display {
+  text-align: right;
+  font-size: 2.2rem;
+  font-weight: 600;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.keypad-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.keypad-grid button {
+  padding: 14px 0;
+  font-size: 1.3rem;
+  font-weight: 500;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.keypad-grid button:active {
+  background: var(--surface-2);
+}
+
+/* Backspace duduk di sel terakhir grid 3×4 (kanan bawah, paling dekat ibu jari).
+   Sebelumnya ia dipaksa ke `grid-row: 2` tanpa kolom, padahal baris itu sudah
+   penuh oleh 4/5/6 — auto-placement lalu membuat kolom keempat implisit dan
+   seluruh keypad melar. */
+.keypad-grid .backspace {
+  color: var(--text-dim);
+}
+
+/* ---- Tag chips ---- */
+
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.chip {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+.chip.selected {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+.chip-input {
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.85rem;
+  width: 90px;
+}
+
+.wallet-label {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+/* ---- Warning line (mekanisme anti-pembiasaan 2) ---- */
+
+.warning-line {
+  font-size: 0.9rem;
+  color: var(--band-mendesak);
+  font-weight: 600;
+  min-height: 1.2em;
+}
+
+/* ---- Intent grid / save actions ---- */
+
+.intent-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.intent-grid button {
+  padding: 20px 8px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.intent-grid button:active {
+  background: var(--surface-2);
+}
+
+.intent-grid button:disabled,
+.wide-save:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.wide-save {
+  padding: 18px;
+  border-radius: 14px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: white;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+/* ---- Recent entries ---- */
+
+.recent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.recent-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 0.9rem;
+  text-align: left;
+  width: 100%;
+}
+
+.recent-item .meta {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+
+.recent-item .amount.out { color: var(--danger); }
+.recent-item .amount.in { color: #4fd88a; }
+
+/* Menghapus harus jadi tindakan yang disengaja. Sebelumnya seluruh baris adalah
+   tombol hapus, sehingga menyentuh entri untuk membacanya justru memusnahkannya. */
+.row-delete {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.row-delete:active {
+  background: var(--surface-2);
+  color: var(--danger);
+}
+
+/* ---- Snackbar ---- */
+
+.snackbar {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  width: calc(100% - 32px);
+  max-width: 448px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  z-index: 20;
+}
+
+.snackbar button {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-weight: 700;
+  padding: 4px 8px;
+}
+
+/* ---- Nav ---- */
+
+.nav {
+  display: flex;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.nav button {
+  flex: 1;
+  padding: 12px;
+  background: none;
+  border: none;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.nav button.active {
+  color: var(--accent);
+}
+
+/* ---- Onboarding ---- */
+
+.onboarding {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 20px;
+  padding: 24px;
+}
+
+.onboarding h1 {
+  font-size: 1.4rem;
+  margin: 0;
+}
+
+.onboarding p.hint {
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.onboarding p.hint.error {
+  color: var(--danger);
+}
+
+.onboarding button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.onboarding input[type="text"],
+.onboarding input[type="number"] {
+  font-size: 1.6rem;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  width: 100%;
+}
+
+.onboarding .choice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.onboarding .choice-list button {
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 1rem;
+  text-align: left;
+}
+
+.onboarding .choice-list button.selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+}
+
+.onboarding .actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.btn-primary {
+  padding: 12px 22px;
+  border-radius: 10px;
+  border: none;
+  background: var(--accent);
+  color: white;
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-text {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 0.95rem;
+}
+
+/* ---- Riwayat ---- */
+
+.day-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.day-group h3 {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  margin: 12px 0 2px;
+  font-weight: 600;
+}
+
+.empty-state {
+  color: var(--text-dim);
+  text-align: center;
+  padding: 40px 16px;
+}
