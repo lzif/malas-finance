@@ -4,15 +4,15 @@ import './app.css'
 import { appState } from './lib/stores/appState.svelte'
 
 const target = document.getElementById('app')
-if (!target) throw new Error('#app tidak ditemukan')
+if (!target) throw new Error('#app element not found')
 
-// Minta penyimpanan persisten (spec §9.1). Tanpa ini, IndexedDB diperlakukan
-// browser sebagai cache yang boleh digusur saat ruang menipis — dan yang
-// tergusur adalah seluruh catatan keuangan. Best-effort: browser boleh menolak,
-// jadi kegagalannya tidak boleh menghentikan aplikasi.
+// Request persistent storage (spec §9.1). Without this, the browser treats
+// IndexedDB as a cache that can be evicted when space runs low — and what
+// gets evicted is the entire financial record. Best-effort: the browser may
+// refuse, so its failure must not stop the app.
 void navigator.storage?.persist?.().catch(() => undefined)
 
-// Jam reaktif untuk pergantian hari (lihat AppState.startClock).
+// Reactive clock for day rollover (see AppState.startClock).
 appState.startClock()
 
 const app = mount(App, { target })

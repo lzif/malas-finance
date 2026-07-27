@@ -1,10 +1,10 @@
-// db/repo/wallets.ts — dompet dan perhitungan saldo (spec §4.1).
+// db/repo/wallets.ts — wallets and balance calculations (spec §4.1).
 //
-// saldoDompet/saldoBelanja bukan bagian dari domain/ murni: keduanya
-// mereduksi tabel `transactions` yang dimuat dari Dexie. MVP scope
-// (lihat brief) membatasi domain/ hanya pada day.ts, cycle.ts, allowance.ts,
-// runway.ts — jadi agregasi saldo ini hidup di lapisan repo, dekat sumber
-// datanya, walau secara matematis tetap fungsi murni atas array biasa.
+// walletBalance/spendableBalance are not part of pure domain/: both reduce
+// over the `transactions` table loaded from Dexie. The MVP scope (see brief)
+// limits domain/ to day.ts, cycle.ts, allowance.ts, runway.ts — so this
+// balance aggregation lives in the repo layer, close to its data source,
+// even though mathematically it is still a pure function over plain arrays.
 
 import { db, type Transaction, type Wallet } from '../schema'
 
@@ -13,17 +13,18 @@ export async function createWallet(input: {
   kind: Wallet['kind']
   initialBalance: number
 }): Promise<Wallet> {
-  // Ditegakkan di sini, bukan hanya di UI — UI bisa dilewati, repository tidak
-  // (spec §5.1). Uang disimpan sebagai rupiah bulat (§5.2); saldo awal pecahan
-  // atau NaN akan merembes ke setiap hitungan di §4 tanpa pernah terlihat.
+  // Enforced here, not just in the UI — the UI can be bypassed, the
+  // repository cannot (spec §5.1). Money is stored as whole rupiah (§5.2);
+  // a fractional or NaN initial balance would leak into every calculation
+  // in §4 without ever being visible.
   if (!Number.isInteger(input.initialBalance)) {
-    throw new Error('initialBalance harus bilangan bulat')
+    throw new Error('initialBalance must be an integer')
   }
   if (input.initialBalance < 0) {
-    throw new Error('initialBalance tidak boleh negatif')
+    throw new Error('initialBalance must not be negative')
   }
   if (input.name.trim() === '') {
-    throw new Error('nama dompet tidak boleh kosong')
+    throw new Error('wallet name must not be empty')
   }
   const existing = await db.wallets.toArray()
   const wallet: Wallet = {
@@ -44,27 +45,27 @@ export async function activeWallets(): Promise<Wallet[]> {
 }
 
 /**
- * saldoDompet(w) = w.initialBalance + Σ(in→w) − Σ(out←w) + Σ(move→w) − Σ(move←w)
- * Hanya transaksi dengan deletedAt == null.
+ * walletBalance(w) = w.initialBalance + Σ(in→w) − Σ(out←w) + Σ(move→w) − Σ(move←w)
+ * Only transactions with deletedAt == null.
  */
-export function saldoDompet(wallet: Wallet, transaksiAktif: Transaction[]): number {
-  let saldo = wallet.initialBalance
-  for (const t of transaksiAktif) {
+export function walletBalance(wallet: Wallet, activeTransactions: Transaction[]): number {
+  let balance = wallet.initialBalance
+  for (const t of activeTransactions) {
     if (t.deletedAt !== null) continue
-    if (t.kind === 'in' && t.walletId === wallet.id) saldo += t.amount
-    else if (t.kind === 'out' && t.walletId === wallet.id) saldo -= t.amount
-    else if (t.kind === 'move' && t.toWalletId === wallet.id) saldo += t.amount
-    else if (t.kind === 'move' && t.walletId === wallet.id) saldo -= t.amount
+    if (t.kind === 'in' && t.walletId === wallet.id) balance += t.amount
+    else if (t.kind === 'out' && t.walletId === wallet.id) balance -= t.amount
+    else if (t.kind === 'move' && t.toWalletId === wallet.id) balance += t.amount
+    else if (t.kind === 'move' && t.walletId === wallet.id) balance -= t.amount
   }
-  return saldo
+  return balance
 }
 
 /**
- * saldoBelanja = Σ saldoDompet(w) untuk w.kind == 'spendable' && !w.archived.
- * Dompet 'reserve' tidak ikut.
+ * spendableBalance = Σ walletBalance(w) for w.kind == 'spendable' && !w.archived.
+ * 'reserve' wallets are not included.
  */
-export function saldoBelanja(wallets: Wallet[], transaksiAktif: Transaction[]): number {
+export function spendableBalance(wallets: Wallet[], activeTransactions: Transaction[]): number {
   return wallets
     .filter((w) => w.kind === 'spendable' && !w.archived)
-    .reduce((sum, w) => sum + saldoDompet(w, transaksiAktif), 0)
+    .reduce((sum, w) => sum + walletBalance(w, activeTransactions), 0)
 }

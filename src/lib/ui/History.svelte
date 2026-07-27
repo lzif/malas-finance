@@ -1,32 +1,32 @@
 <script lang="ts">
-  // Riwayat — minimal (spec §7.3 scoped down): daftar flat dikelompokkan per
-  // hari, soft-delete saja. Tanpa filter, tanpa UI pulihkan dari trash.
+  // History — minimal (spec §7.3 scoped down): a flat list grouped by day,
+  // soft-delete only. No filters, no trash-restore UI.
   //
-  // Menghapus WAJIB bisa dibatalkan. Trash restore di luar cakupan MVP, jadi
-  // snackbar undo di sini adalah satu-satunya jalan pulih — tanpanya, satu
-  // ketukan salah menghapus catatan keuangan secara permanen.
+  // Deleting MUST be undoable. Trash restore is out of MVP scope, so the
+  // undo snackbar here is the only way back — without it, one wrong tap
+  // permanently deletes a financial record.
 
   import { appState } from '../stores/appState.svelte'
   import { formatRupiah } from '../domain/money'
-  import { formatTanggalPendek } from './formatTanggal'
+  import { formatDateShort } from './formatDate'
   import type { Transaction } from '../db/schema'
 
   let snackbar = $state<{ text: string; undo: () => Promise<void> } | null>(null)
   let snackbarTimeout: ReturnType<typeof setTimeout> | null = null
 
-  async function hapus(tx: Transaction) {
-    await appState.hapusTransaksi(tx.id)
+  async function deleteEntry(tx: Transaction) {
+    await appState.deleteTransaction(tx.id)
     if (snackbarTimeout) clearTimeout(snackbarTimeout)
     snackbar = {
       text: `Dihapus: ${formatRupiah(tx.amount)}`,
-      undo: () => appState.pulihkanTransaksi(tx.id)
+      undo: () => appState.restoreTransaction(tx.id)
     }
     snackbarTimeout = setTimeout(() => {
       snackbar = null
     }, 5000)
   }
 
-  async function batalkan() {
+  async function undoLast() {
     if (!snackbar) return
     const undo = snackbar.undo
     snackbar = null
@@ -46,7 +46,7 @@
   {:else}
     {#each appState.transactionsGroupedByDay() as group (group.dayKey)}
       <div class="day-group">
-        <h3>{formatTanggalPendek(group.dayKey)} · {formatRupiah(subtotal(group.items))}</h3>
+        <h3>{formatDateShort(group.dayKey)} · {formatRupiah(subtotal(group.items))}</h3>
         {#each group.items as tx (tx.id)}
           <div class="recent-item">
             <span>
@@ -54,7 +54,7 @@
               {#if tx.tag}<span class="meta"> #{tx.tag}</span>{/if}
               {#if tx.intent}<span class="meta"> · {tx.intent}</span>{/if}
             </span>
-            <button class="row-delete" onclick={() => hapus(tx)} aria-label="Hapus entri">hapus</button>
+            <button class="row-delete" onclick={() => deleteEntry(tx)} aria-label="Hapus entri">hapus</button>
           </div>
         {/each}
       </div>
@@ -65,6 +65,6 @@
 {#if snackbar}
   <div class="snackbar">
     <span>{snackbar.text}</span>
-    <button onclick={batalkan}>BATAL</button>
+    <button onclick={undoLast}>BATAL</button>
   </div>
 {/if}
