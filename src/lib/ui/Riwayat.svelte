@@ -1,22 +1,37 @@
 <script lang="ts">
   // Riwayat — minimal (spec §7.3 scoped down): daftar flat dikelompokkan per
   // hari, soft-delete saja. Tanpa filter, tanpa UI pulihkan dari trash.
+  //
+  // Menghapus WAJIB bisa dibatalkan. Trash restore di luar cakupan MVP, jadi
+  // snackbar undo di sini adalah satu-satunya jalan pulih — tanpanya, satu
+  // ketukan salah menghapus catatan keuangan secara permanen.
 
   import { appState } from '../stores/appState.svelte'
   import { formatRupiah } from '../domain/money'
   import { formatTanggalPendek } from './formatTanggal'
   import type { Transaction } from '../db/schema'
 
-  let snackbar = $state<string | null>(null)
+  let snackbar = $state<{ text: string; undo: () => Promise<void> } | null>(null)
   let snackbarTimeout: ReturnType<typeof setTimeout> | null = null
 
   async function hapus(tx: Transaction) {
     await appState.hapusTransaksi(tx.id)
     if (snackbarTimeout) clearTimeout(snackbarTimeout)
-    snackbar = `Dihapus: ${formatRupiah(tx.amount)}`
+    snackbar = {
+      text: `Dihapus: ${formatRupiah(tx.amount)}`,
+      undo: () => appState.pulihkanTransaksi(tx.id)
+    }
     snackbarTimeout = setTimeout(() => {
       snackbar = null
-    }, 3000)
+    }, 5000)
+  }
+
+  async function batalkan() {
+    if (!snackbar) return
+    const undo = snackbar.undo
+    snackbar = null
+    if (snackbarTimeout) clearTimeout(snackbarTimeout)
+    await undo()
   }
 
   function subtotal(items: Transaction[]): number {
@@ -33,14 +48,14 @@
       <div class="day-group">
         <h3>{formatTanggalPendek(group.dayKey)} · {formatRupiah(subtotal(group.items))}</h3>
         {#each group.items as tx (tx.id)}
-          <button class="recent-item" onclick={() => hapus(tx)}>
+          <div class="recent-item">
             <span>
               <span class="amount {tx.kind}">{tx.kind === 'out' ? '-' : '+'}{formatRupiah(tx.amount)}</span>
               {#if tx.tag}<span class="meta"> #{tx.tag}</span>{/if}
               {#if tx.intent}<span class="meta"> · {tx.intent}</span>{/if}
             </span>
-            <span class="meta">hapus</span>
-          </button>
+            <button class="row-delete" onclick={() => hapus(tx)} aria-label="Hapus entri">hapus</button>
+          </div>
         {/each}
       </div>
     {/each}
@@ -49,6 +64,7 @@
 
 {#if snackbar}
   <div class="snackbar">
-    <span>{snackbar}</span>
+    <span>{snackbar.text}</span>
+    <button onclick={batalkan}>BATAL</button>
   </div>
 {/if}

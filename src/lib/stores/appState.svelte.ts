@@ -24,6 +24,31 @@ class AppState {
   transactions = $state<Transaction[]>([])
   loaded = $state(false)
 
+  /**
+   * Jam reaktif. `hariIni` TIDAK boleh membaca `Date.now()` langsung: itu bukan
+   * $state, jadi tidak ada yang memicu hitung ulang saat hari berganti. Aplikasi
+   * yang dibiarkan terbuka melewati tengah malam akan terus menampilkan sisa
+   * jatah kemarin — kegagalan total terhadap K1, karena angka jangkar yang salah
+   * lebih buruk daripada tidak ada angka.
+   */
+  private now = $state(Date.now())
+
+  /**
+   * Denyut jam. 30 detik sekali sudah cukup halus untuk pergantian hari, dan
+   * `visibilitychange` menutup celah utama di ponsel: timer di tab yang
+   * dilatarbelakangi dilambatkan atau dibekukan browser, jadi saat pemakai
+   * kembali membuka aplikasi esok paginya, timer saja tidak bisa diandalkan.
+   */
+  startClock(): void {
+    if (typeof window === 'undefined') return
+    setInterval(() => {
+      this.now = Date.now()
+    }, 30_000)
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) this.now = Date.now()
+    })
+  }
+
   async load(): Promise<void> {
     const [settings, wallets, transactions] = await Promise.all([
       getSettings(),
@@ -41,7 +66,7 @@ class AppState {
   }
 
   get hariIni(): string {
-    return dayKeyOf(Date.now(), this.dayStartHour)
+    return dayKeyOf(this.now, this.dayStartHour)
   }
 
   get onboarded(): boolean {
@@ -145,7 +170,10 @@ class AppState {
     cycleAnchorDay: number
   }): Promise<void> {
     await createWallet({ name: 'CASH', kind: 'spendable', initialBalance: input.saldoAwal })
-    const startedAt = dayKeyOf(Date.now(), 0)
+    // Harus memakai dayStartHour yang berlaku, bukan 0 yang dipaku. Kalau keduanya
+    // berbeda, `hariSejakMulai = selisihHari(hariIni, startedAt)` bisa jadi negatif
+    // di jam-jam awal hari, dan bobot ramp cold-start runway ikut negatif.
+    const startedAt = dayKeyOf(Date.now(), this.dayStartHour)
     await repoUpdateSettings({
       seedDailySpend: input.seedDailySpend,
       cycleMode: input.cycleMode,

@@ -13,6 +13,18 @@ export async function createWallet(input: {
   kind: Wallet['kind']
   initialBalance: number
 }): Promise<Wallet> {
+  // Ditegakkan di sini, bukan hanya di UI — UI bisa dilewati, repository tidak
+  // (spec §5.1). Uang disimpan sebagai rupiah bulat (§5.2); saldo awal pecahan
+  // atau NaN akan merembes ke setiap hitungan di §4 tanpa pernah terlihat.
+  if (!Number.isInteger(input.initialBalance)) {
+    throw new Error('initialBalance harus bilangan bulat')
+  }
+  if (input.initialBalance < 0) {
+    throw new Error('initialBalance tidak boleh negatif')
+  }
+  if (input.name.trim() === '') {
+    throw new Error('nama dompet tidak boleh kosong')
+  }
   const existing = await db.wallets.toArray()
   const wallet: Wallet = {
     id: crypto.randomUUID(),

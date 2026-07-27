@@ -188,12 +188,12 @@
       <button onclick={() => appendDigit('4')}>4</button>
       <button onclick={() => appendDigit('5')}>5</button>
       <button onclick={() => appendDigit('6')}>6</button>
-      <button class="backspace" onclick={backspace}>⌫</button>
       <button onclick={() => appendDigit('1')}>1</button>
       <button onclick={() => appendDigit('2')}>2</button>
       <button onclick={() => appendDigit('3')}>3</button>
       <button onclick={() => appendDigit('0')}>0</button>
       <button onclick={() => appendDigit('000')}>000</button>
+      <button class="backspace" onclick={backspace} aria-label="Hapus satu digit">⌫</button>
     </div>
   </div>
 
@@ -243,14 +243,14 @@
 
   <div class="recent-list">
     {#each appState.recentTransactions as tx (tx.id)}
-      <button class="recent-item" onclick={() => hapusEntri(tx)}>
+      <div class="recent-item">
         <span>
           <span class="amount {tx.kind}">{tx.kind === 'out' ? '-' : '+'}{formatRupiah(tx.amount)}</span>
           {#if tx.tag}<span class="meta"> #{tx.tag}</span>{/if}
           {#if tx.intent}<span class="meta"> · {tx.intent}</span>{/if}
         </span>
-        <span class="meta">hapus</span>
-      </button>
+        <button class="row-delete" onclick={() => hapusEntri(tx)} aria-label="Hapus entri">hapus</button>
+      </div>
     {/each}
   </div>
 </div>

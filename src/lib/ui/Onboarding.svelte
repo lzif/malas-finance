@@ -12,9 +12,17 @@
   let anchorDay = $state('1')
   let submitting = $state(false)
 
-  const saldoAwalNum = $derived(Number(saldoAwal) || 0)
-  const seedNum = $derived(Number(seedDailySpend) || 0)
+  const saldoAwalNum = $derived(Math.floor(Number(saldoAwal) || 0))
+  const seedNum = $derived(Math.floor(Number(seedDailySpend) || 0))
   const anchorDayNum = $derived(Math.min(31, Math.max(1, Number(anchorDay) || 1)))
+
+  // Onboarding inilah yang membuat angka jangkar dan runway berfungsi sejak hari
+  // pertama (spec §7.5). Melewatinya dengan nilai kosong menghasilkan saldo 0 dan
+  // seed 0 — aplikasi lalu terkunci permanen di status "minus" dengan runway "—"
+  // tanpa pernah menjelaskan kenapa. Nilai negatif lebih buruk lagi: dompet
+  // bersaldo minus membuat setiap rumus di §4 melenceng sejak awal.
+  const saldoValid = $derived(saldoAwalNum > 0)
+  const seedValid = $derived(seedNum > 0)
 
   function next() {
     step += 1
@@ -40,18 +48,24 @@
   {#if step === 1}
     <h1>Uangmu sekarang berapa?</h1>
     <p class="hint">Ini jadi saldo awal dompet CASH kamu.</p>
-    <input type="number" inputmode="numeric" min="0" placeholder="0" bind:value={saldoAwal} />
+    <input type="number" inputmode="numeric" min="1" step="1" placeholder="0" bind:value={saldoAwal} />
+    {#if saldoAwal !== '' && !saldoValid}
+      <p class="hint error">Isi dengan angka lebih dari nol.</p>
+    {/if}
     <div class="actions">
       <span></span>
-      <button class="btn-primary" onclick={next}>Lanjut</button>
+      <button class="btn-primary" disabled={!saldoValid} onclick={next}>Lanjut</button>
     </div>
   {:else if step === 2}
     <h1>Sehari kira-kira habis berapa?</h1>
     <p class="hint">Perkiraan saja. Ini dipakai untuk menghitung runway sampai data asli terkumpul.</p>
-    <input type="number" inputmode="numeric" min="0" placeholder="0" bind:value={seedDailySpend} />
+    <input type="number" inputmode="numeric" min="1" step="1" placeholder="0" bind:value={seedDailySpend} />
+    {#if seedDailySpend !== '' && !seedValid}
+      <p class="hint error">Isi dengan angka lebih dari nol — tanpa ini runway tidak bisa dihitung.</p>
+    {/if}
     <div class="actions">
       <button class="btn-text" onclick={back}>Kembali</button>
-      <button class="btn-primary" onclick={next}>Lanjut</button>
+      <button class="btn-primary" disabled={!seedValid} onclick={next}>Lanjut</button>
     </div>
   {:else if step === 3}
     <h1>Gajian tanggal berapa?</h1>
@@ -82,7 +96,11 @@
     </div>
     <div class="actions">
       <button class="btn-text" onclick={back}>Kembali</button>
-      <button class="btn-primary" disabled={cyclePath === null || submitting} onclick={selesai}>
+      <button
+        class="btn-primary"
+        disabled={cyclePath === null || submitting || !saldoValid || !seedValid}
+        onclick={selesai}
+      >
         Mulai
       </button>
     </div>

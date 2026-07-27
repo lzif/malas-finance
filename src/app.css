@@ -155,8 +155,12 @@ button {
   background: var(--surface-2);
 }
 
+/* Backspace duduk di sel terakhir grid 3×4 (kanan bawah, paling dekat ibu jari).
+   Sebelumnya ia dipaksa ke `grid-row: 2` tanpa kolom, padahal baris itu sudah
+   penuh oleh 4/5/6 — auto-placement lalu membuat kolom keempat implisit dan
+   seluruh keypad melar. */
 .keypad-grid .backspace {
-  grid-row: 2 / span 1;
+  color: var(--text-dim);
 }
 
 /* ---- Tag chips ---- */
@@ -274,6 +278,24 @@ button {
 .recent-item .amount.out { color: var(--danger); }
 .recent-item .amount.in { color: #4fd88a; }
 
+/* Menghapus harus jadi tindakan yang disengaja. Sebelumnya seluruh baris adalah
+   tombol hapus, sehingga menyentuh entri untuk membacanya justru memusnahkannya. */
+.row-delete {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.row-delete:active {
+  background: var(--surface-2);
+  color: var(--danger);
+}
+
 /* ---- Snackbar ---- */
 
 .snackbar {
@@ -345,6 +367,15 @@ button {
   color: var(--text-dim);
   font-size: 0.9rem;
   margin: 0;
+}
+
+.onboarding p.hint.error {
+  color: var(--danger);
+}
+
+.onboarding button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .onboarding input[type="text"],
