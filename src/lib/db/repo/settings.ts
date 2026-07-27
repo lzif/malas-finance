@@ -1,4 +1,4 @@
-// db/repo/settings.ts — baris tunggal pengaturan aplikasi.
+// db/repo/settings.ts — single-row application settings.
 
 import { db, DEFAULT_SETTINGS, type Settings } from '../schema'
 

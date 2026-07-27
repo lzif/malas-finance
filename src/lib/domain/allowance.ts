@@ -1,96 +1,105 @@
-// domain/allowance.ts — jatah harian, angka jangkar aplikasi. Fungsi murni.
-// (spec §4.4). Ini bagian paling penting: kalau angka ini berbohong sekali
-// saja, pemakainya berhenti percaya dan aplikasinya mati.
+// domain/allowance.ts — daily allowance, the app's anchor number. Pure
+// functions. (spec §4.4). This is the most important part of the codebase:
+// if this number lies even once, the user stops trusting it and the app dies.
 
 import type { Kind } from './types'
 
-export interface JatahTransaksi {
+export interface AllowanceTransaction {
   kind: Kind
   amount: number
-  /** null bila bukan pembayaran komitmen. */
+  /** null unless this is a commitment payment. */
   commitmentId: string | null
 }
 
-export interface HitungJatahInput {
-  /** Σ saldoDompet(w) untuk seluruh dompet spendable, tidak diarsipkan. */
-  saldoBelanja: number
-  /** Transaksi aktif (belum terhapus) dengan dayKey === hari ini. */
-  transaksiHariIni: JatahTransaksi[]
+export interface AllowanceInput {
+  /** Σ walletBalance(w) across all spendable, non-archived wallets. */
+  spendableBalance: number
+  /** Active (non-deleted) transactions with dayKey === today. */
+  transactionsToday: AllowanceTransaction[]
   /**
-   * Σ tagihan komitmen yang belum dibayar dan jatuh tempo di jendela siklus
-   * berjalan. Parameter ini WAJIB ada meski komitmen di luar cakupan MVP —
-   * caller mengirim 0. Jangan hapus dari signature: menambah komitmen nanti
-   * tidak boleh mengubah bentuk domain/.
+   * Σ unpaid commitment bills due within the current cycle window. This
+   * parameter is REQUIRED even though commitments are out of MVP scope —
+   * the caller passes 0. Do not remove it from the signature: adding
+   * commitments later must not change the shape of domain/.
    */
-  komitmenBelumDibayar: number
+  unpaidCommitments: number
   endBuffer: number
-  /** max(1, selisihHari(cycleEnd, hariIni) + 1) — dari cycle.ts. */
-  sisaHari: number
+  /** max(1, daysBetween(cycleEnd, today) + 1) — from cycle.ts. */
+  daysRemaining: number
 }
 
-export type StatusJatah = 'normal' | 'minus' | 'lewat'
+// NOTE: these string values are intentionally left as the original Indonesian
+// terms (not translated to e.g. 'negative' / 'exceeded'). They are internal
+// status codes, never rendered to the user directly, and are pinned by
+// literal `.toBe(...)` assertions in allowance.test.ts that this refactor
+// must not alter. Only the type/function identifiers around them are renamed.
+export type AllowanceStatus = 'normal' | 'minus' | 'lewat'
 
-export interface HasilJatah {
-  terpakaiHariIni: number
-  basisJatah: number
-  danaTersedia: number
-  jatahHariIni: number
-  sisaJatah: number
-  status: StatusJatah
-  /** null bila jatahHariIni === 0 (kondisi minus) — persentase tidak terdefinisi. */
-  persenTerpakai: number | null
+export interface AllowanceResult {
+  spentToday: number
+  allowanceBasis: number
+  availableFunds: number
+  allowanceToday: number
+  remainingAllowance: number
+  status: AllowanceStatus
+  /** null when allowanceToday === 0 (minus condition) — percentage is undefined. */
+  percentUsed: number | null
 }
 
 /**
- * hitungJatah(input) → { jatah, terpakai, sisa, status }
+ * computeAllowance(input) → { allowanceToday, remainingAllowance, status, ... }
  *
- * terpakaiHariIni = Σ amount  untuk out, dayKey == hariIni, commitmentId == null
- * basisJatah      = saldoBelanja + terpakaiHariIni
- * danaTersedia    = basisJatah − komitmenBelumDibayar − endBuffer
- * jatahHariIni    = danaTersedia > 0 ? floor(danaTersedia / sisaHari) : 0
- * sisaJatah       = jatahHariIni − terpakaiHariIni
+ * spentToday      = Σ amount  for out, dayKey == today, commitmentId == null
+ * allowanceBasis  = spendableBalance + spentToday
+ * availableFunds  = allowanceBasis − unpaidCommitments − endBuffer
+ * allowanceToday  = availableFunds > 0 ? floor(availableFunds / daysRemaining) : 0
+ * remainingAllowance = allowanceToday − spentToday
  */
-export function hitungJatah(input: HitungJatahInput): HasilJatah {
-  const terpakaiHariIni = input.transaksiHariIni
+export function computeAllowance(input: AllowanceInput): AllowanceResult {
+  const spentToday = input.transactionsToday
     .filter((t) => t.kind === 'out' && t.commitmentId === null)
     .reduce((sum, t) => sum + t.amount, 0)
 
-  const basisJatah = input.saldoBelanja + terpakaiHariIni
-  const danaTersedia = basisJatah - input.komitmenBelumDibayar - input.endBuffer
-  const jatahHariIni = danaTersedia > 0 ? Math.floor(danaTersedia / input.sisaHari) : 0
-  const sisaJatah = jatahHariIni - terpakaiHariIni
+  const allowanceBasis = input.spendableBalance + spentToday
+  const availableFunds = allowanceBasis - input.unpaidCommitments - input.endBuffer
+  const allowanceToday = availableFunds > 0 ? Math.floor(availableFunds / input.daysRemaining) : 0
+  const remainingAllowance = allowanceToday - spentToday
 
-  let status: StatusJatah = 'normal'
-  if (danaTersedia <= 0) status = 'minus'
-  else if (sisaJatah < 0) status = 'lewat'
+  let status: AllowanceStatus = 'normal'
+  if (availableFunds <= 0) status = 'minus'
+  else if (remainingAllowance < 0) status = 'lewat'
 
-  const persenTerpakai = jatahHariIni > 0 ? terpakaiHariIni / jatahHariIni : null
+  const percentUsed = allowanceToday > 0 ? spentToday / allowanceToday : null
 
-  return { terpakaiHariIni, basisJatah, danaTersedia, jatahHariIni, sisaJatah, status, persenTerpakai }
+  return { spentToday, allowanceBasis, availableFunds, allowanceToday, remainingAllowance, status, percentUsed }
 }
 
-export type BandJatah = 'tenang' | 'waspada' | 'mendesak' | 'terlampaui'
+// NOTE: same as AllowanceStatus above — these string values are intentionally
+// left untranslated. They double as the CSS class suffix in app.css
+// (`.band-tenang`, `.band-waspada`, ...) and are pinned by literal
+// `.toBe(...)` assertions in allowance.test.ts.
+export type AllowanceBand = 'tenang' | 'waspada' | 'mendesak' | 'terlampaui'
 
 /**
- * Perlakuan visual anti-pembiasaan (spec §7.1, mekanisme 1): warna dan bobot
- * huruf mengikuti persentase jatah yang terpakai, bukan hanya digitnya.
- * tenang 0–60%, waspada 60–90%, mendesak 90–100%, terlampaui >100%.
+ * Anti-habituation visual treatment (spec §7.1, mechanism 1): color and font
+ * weight follow the percentage of the allowance used, not just its digits.
+ * calm 0–60%, alert 60–90%, urgent 90–100%, exceeded >100%.
  */
-export function bandJatah(persenTerpakai: number | null): BandJatah {
-  if (persenTerpakai === null) return 'terlampaui'
-  if (persenTerpakai > 1) return 'terlampaui'
-  if (persenTerpakai >= 0.9) return 'mendesak'
-  if (persenTerpakai >= 0.6) return 'waspada'
+export function allowanceBand(percentUsed: number | null): AllowanceBand {
+  if (percentUsed === null) return 'terlampaui'
+  if (percentUsed > 1) return 'terlampaui'
+  if (percentUsed >= 0.9) return 'mendesak'
+  if (percentUsed >= 0.6) return 'waspada'
   return 'tenang'
 }
 
 /**
- * Mekanisme anti-pembiasaan 2 (spec §7.1): intervensi di detik keputusan.
- * Berapa rupiah nominal yang sedang diketik akan melewati sisa jatah —
- * 0 bila tidak melewati. Dipakai untuk baris peringatan sebelum simpan:
- * "Ini akan melewati jatah Rp <hasil>."
+ * Anti-habituation mechanism 2 (spec §7.1): intervention at the moment of
+ * decision. How many rupiah the amount being typed would exceed the
+ * remaining allowance by — 0 if it doesn't exceed it. Used for the warning
+ * line shown before saving: "This will exceed your allowance by Rp <result>."
  */
-export function perkiraanLewatJatah(nominal: number, sisaJatahSaatIni: number): number {
-  const sisaSetelah = sisaJatahSaatIni - nominal
-  return sisaSetelah < 0 ? -sisaSetelah : 0
+export function projectedOverspend(amount: number, remainingAllowanceNow: number): number {
+  const remainingAfter = remainingAllowanceNow - amount
+  return remainingAfter < 0 ? -remainingAfter : 0
 }

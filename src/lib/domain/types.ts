@@ -1,26 +1,26 @@
-// domain/types.ts — tipe data murni dipakai lintas domain/. Tidak ada import.
+// domain/types.ts — pure data types shared across domain/. No imports.
 
 export type CycleMode = 'monthly-day' | 'manual' | 'rolling'
 
 export interface CycleSettings {
   cycleMode: CycleMode
-  /** 1..31, dijepit ke akhir bulan bila perlu. Dipakai untuk mode 'monthly-day'. */
+  /** 1..31, clamped to the end of the month when needed. Used for 'monthly-day' mode. */
   cycleAnchorDay: number
-  /** dayKey akhir siklus berikutnya, dipakai untuk mode 'manual'. */
+  /** dayKey of the next cycle end, used for 'manual' mode. */
   cycleManualEnd: string | null
 }
 
 export type CycleStatus = 'active' | 'cycle-expired'
 
 export interface CycleResult {
-  /** dayKey awal siklus. */
+  /** dayKey of the cycle start. */
   start: string
-  /** dayKey akhir siklus. */
+  /** dayKey of the cycle end. */
   end: string
-  /** panjang siklus dalam hari, inklusif kedua ujung. */
-  panjang: number
-  /** hari tersisa termasuk hari ini, minimal 1 (spec §4.2). */
-  sisaHari: number
+  /** cycle length in days, inclusive of both ends. */
+  length: number
+  /** days remaining including today, minimum 1 (spec §4.2). */
+  daysRemaining: number
   status: CycleStatus
 }
 

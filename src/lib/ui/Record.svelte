@@ -1,13 +1,14 @@
 <script lang="ts">
-  // Catat (beranda) — spec §7.1. Angka jangkar di atas form, niat wajib lewat
-  // grid 2×2 yang MERANGKAP tombol simpan, dan dua mekanisme anti-pembiasaan
-  // wajib: (1) warna/bobot mengikuti persentase jatah terpakai, (2) baris
-  // peringatan sebelum simpan bila nominal akan melewati sisa jatah.
+  // Record (home screen) — spec §7.1. The anchor number sits above the form,
+  // intent is required via a 2×2 grid that DOUBLES as the save button, and
+  // two mandatory anti-habituation mechanisms: (1) color/weight follow the
+  // percentage of the allowance used, (2) a warning line appears before
+  // saving if the amount would exceed the remaining allowance.
 
   import { appState } from '../stores/appState.svelte'
-  import { formatRupiah, formatAngka } from '../domain/money'
-  import { bandJatah, perkiraanLewatJatah } from '../domain/allowance'
-  import { formatTanggalPendek } from './formatTanggal'
+  import { formatRupiah, formatNumber } from '../domain/money'
+  import { allowanceBand, projectedOverspend } from '../domain/allowance'
+  import { formatDateShort } from './formatDate'
   import type { Intent, Transaction } from '../db/schema'
   import type { NewTransactionInput } from '../db/repo/transactions'
 
@@ -21,7 +22,7 @@
   ]
 
   let mode = $state<Mode>('out')
-  let nominalDigits = $state('0')
+  let amountDigits = $state('0')
   let selectedTag = $state<string | null>(null)
   let showTagInput = $state(false)
   let customTag = $state('')
@@ -31,18 +32,20 @@
   let snackbar = $state<{ text: string; undo: () => Promise<void> } | null>(null)
   let snackbarTimeout: ReturnType<typeof setTimeout> | null = null
 
-  const nominal = $derived(Number(nominalDigits))
+  const amount = $derived(Number(amountDigits))
   const walletId = $derived(appState.wallets[0]?.id ?? '')
-  const jatah = $derived(appState.jatah)
+  const allowance = $derived(appState.allowance)
   const cycle = $derived(appState.cycle)
-  const band = $derived(bandJatah(jatah?.persenTerpakai ?? null))
+  const band = $derived(allowanceBand(allowance?.percentUsed ?? null))
   const runwayText = $derived(
     appState.runway
-      ? `${appState.runway.hari} hari${appState.runway.perkiraan ? ' (perkiraan)' : ''}`
+      ? `${appState.runway.days} hari${appState.runway.estimated ? ' (perkiraan)' : ''}`
       : '—'
   )
-  const lewatJatah = $derived(
-    mode === 'out' && jatah && nominal > 0 ? perkiraanLewatJatah(nominal, jatah.sisaJatah) : 0
+  const overspend = $derived(
+    mode === 'out' && allowance && amount > 0
+      ? projectedOverspend(amount, allowance.remainingAllowance)
+      : 0
   )
 
   $effect(() => {
@@ -53,17 +56,17 @@
   })
 
   function appendDigit(d: string) {
-    if (nominalDigits.length >= 12) return
+    if (amountDigits.length >= 12) return
     if (d === '000') {
-      if (nominalDigits === '0') return
-      nominalDigits = (nominalDigits + '000').slice(0, 12)
+      if (amountDigits === '0') return
+      amountDigits = (amountDigits + '000').slice(0, 12)
       return
     }
-    nominalDigits = nominalDigits === '0' ? d : nominalDigits + d
+    amountDigits = amountDigits === '0' ? d : amountDigits + d
   }
 
   function backspace() {
-    nominalDigits = nominalDigits.length <= 1 ? '0' : nominalDigits.slice(0, -1)
+    amountDigits = amountDigits.length <= 1 ? '0' : amountDigits.slice(0, -1)
   }
 
   function toggleTag(tag: string) {
@@ -78,7 +81,7 @@
   }
 
   function resetForm() {
-    nominalDigits = '0'
+    amountDigits = '0'
     selectedTag = null
   }
 
@@ -90,7 +93,7 @@
     }, 5000)
   }
 
-  async function batalkan() {
+  async function undoLast() {
     if (!snackbar) return
     const undo = snackbar.undo
     snackbar = null
@@ -98,12 +101,12 @@
     await undo()
   }
 
-  async function simpanKeluar(intent: Intent) {
-    if (nominal <= 0 || !walletId || saving) return
+  async function saveExpense(intent: Intent) {
+    if (amount <= 0 || !walletId || saving) return
     saving = true
     const input: NewTransactionInput = {
       kind: 'out',
-      amount: nominal,
+      amount,
       intent,
       tag: selectedTag,
       note: null,
@@ -111,21 +114,21 @@
       toWalletId: null,
       commitmentId: null
     }
-    const tx = await appState.simpanTransaksi(input)
+    const tx = await appState.saveTransaction(input)
     saving = false
     resetForm()
     fireSnackbar(
       `Keluar ${formatRupiah(tx.amount)}${tx.tag ? ' #' + tx.tag : ''}`,
-      () => appState.hapusTransaksi(tx.id)
+      () => appState.deleteTransaction(tx.id)
     )
   }
 
-  async function simpanMasuk() {
-    if (nominal <= 0 || !walletId || saving) return
+  async function saveIncome() {
+    if (amount <= 0 || !walletId || saving) return
     saving = true
     const input: NewTransactionInput = {
       kind: 'in',
-      amount: nominal,
+      amount,
       intent: null,
       tag: selectedTag,
       note: null,
@@ -133,36 +136,36 @@
       toWalletId: null,
       commitmentId: null
     }
-    const tx = await appState.simpanTransaksi(input)
+    const tx = await appState.saveTransaction(input)
     saving = false
     resetForm()
-    fireSnackbar(`Masuk ${formatRupiah(tx.amount)}`, () => appState.hapusTransaksi(tx.id))
+    fireSnackbar(`Masuk ${formatRupiah(tx.amount)}`, () => appState.deleteTransaction(tx.id))
   }
 
-  async function hapusEntri(tx: Transaction) {
-    await appState.hapusTransaksi(tx.id)
+  async function deleteEntry(tx: Transaction) {
+    await appState.deleteTransaction(tx.id)
     fireSnackbar(
       `Dihapus: ${formatRupiah(tx.amount)}${tx.tag ? ' #' + tx.tag : ''}`,
-      () => appState.pulihkanTransaksi(tx.id)
+      () => appState.restoreTransaction(tx.id)
     )
   }
 </script>
 
 <div class="screen">
   <div class="anchor band-{band}">
-    {#if jatah && cycle}
-      {#if jatah.status === 'minus'}
+    {#if allowance && cycle}
+      {#if allowance.status === 'minus'}
         <div class="anchor-value">Rp 0</div>
         <div class="anchor-sub danger">
-          Kamu minus {formatRupiah(-jatah.danaTersedia)} sampai {formatTanggalPendek(cycle.end)}
+          Kamu minus {formatRupiah(-allowance.availableFunds)} sampai {formatDateShort(cycle.end)}
         </div>
-      {:else if jatah.status === 'lewat'}
+      {:else if allowance.status === 'lewat'}
         <div class="anchor-value">Rp 0</div>
-        <div class="anchor-sub danger">Lewat {formatRupiah(-jatah.sisaJatah)} hari ini</div>
+        <div class="anchor-sub danger">Lewat {formatRupiah(-allowance.remainingAllowance)} hari ini</div>
       {:else}
-        <div class="anchor-value">{formatRupiah(jatah.sisaJatah)}</div>
+        <div class="anchor-value">{formatRupiah(allowance.remainingAllowance)}</div>
         <div class="anchor-sub">
-          dari {formatRupiah(jatah.jatahHariIni)} · runway {runwayText}
+          dari {formatRupiah(allowance.allowanceToday)} · runway {runwayText}
         </div>
       {/if}
     {:else}
@@ -180,7 +183,7 @@
   </div>
 
   <div>
-    <div class="keypad-display">{formatAngka(nominal)}</div>
+    <div class="keypad-display">{formatNumber(amount)}</div>
     <div class="keypad-grid">
       <button onclick={() => appendDigit('7')}>7</button>
       <button onclick={() => appendDigit('8')}>8</button>
@@ -224,19 +227,19 @@
 
   {#if mode === 'out'}
     <div class="warning-line">
-      {#if lewatJatah > 0}
-        Ini akan melewati jatah {formatRupiah(lewatJatah)}.
+      {#if overspend > 0}
+        Ini akan melewati jatah {formatRupiah(overspend)}.
       {/if}
     </div>
     <div class="intent-grid">
       {#each INTENTS as intent (intent.value)}
-        <button disabled={nominal <= 0 || saving} onclick={() => simpanKeluar(intent.value)}>
+        <button disabled={amount <= 0 || saving} onclick={() => saveExpense(intent.value)}>
           {intent.label}
         </button>
       {/each}
     </div>
   {:else}
-    <button class="wide-save" disabled={nominal <= 0 || saving} onclick={simpanMasuk}>
+    <button class="wide-save" disabled={amount <= 0 || saving} onclick={saveIncome}>
       SIMPAN PEMASUKAN
     </button>
   {/if}
@@ -249,7 +252,7 @@
           {#if tx.tag}<span class="meta"> #{tx.tag}</span>{/if}
           {#if tx.intent}<span class="meta"> · {tx.intent}</span>{/if}
         </span>
-        <button class="row-delete" onclick={() => hapusEntri(tx)} aria-label="Hapus entri">hapus</button>
+        <button class="row-delete" onclick={() => deleteEntry(tx)} aria-label="Hapus entri">hapus</button>
       </div>
     {/each}
   </div>
@@ -258,6 +261,6 @@
 {#if snackbar}
   <div class="snackbar">
     <span>{snackbar.text}</span>
-    <button onclick={batalkan}>BATAL</button>
+    <button onclick={undoLast}>BATAL</button>
   </div>
 {/if}

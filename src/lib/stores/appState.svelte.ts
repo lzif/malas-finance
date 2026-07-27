@@ -1,9 +1,9 @@
-// stores/appState.svelte.ts — menyambungkan db ke domain (spec §6, arsitektur).
-// Satu-satunya tempat di aplikasi yang tahu baik Dexie maupun domain/ murni.
+// stores/appState.svelte.ts — connects db to domain (spec §6, architecture).
+// The only place in the app that knows about both Dexie and pure domain/.
 
 import { db, type Settings, type Transaction, type Wallet } from '../db/schema'
 import { getSettings, updateSettings as repoUpdateSettings } from '../db/repo/settings'
-import { activeWallets, createWallet, saldoBelanja as computeSaldoBelanja } from '../db/repo/wallets'
+import { activeWallets, createWallet, spendableBalance as computeSpendableBalance } from '../db/repo/wallets'
 import {
   addTransaction,
   allActiveTransactions,
@@ -14,8 +14,8 @@ import {
 } from '../db/repo/transactions'
 import { dayKeyOf } from '../domain/day'
 import { cycleFor } from '../domain/cycle'
-import { hitungJatah, type HasilJatah } from '../domain/allowance'
-import { hitungRunway, type HasilRunway } from '../domain/runway'
+import { computeAllowance, type AllowanceResult } from '../domain/allowance'
+import { computeRunway, type RunwayResult } from '../domain/runway'
 import type { CycleResult } from '../domain/types'
 
 class AppState {
@@ -25,19 +25,19 @@ class AppState {
   loaded = $state(false)
 
   /**
-   * Jam reaktif. `hariIni` TIDAK boleh membaca `Date.now()` langsung: itu bukan
-   * $state, jadi tidak ada yang memicu hitung ulang saat hari berganti. Aplikasi
-   * yang dibiarkan terbuka melewati tengah malam akan terus menampilkan sisa
-   * jatah kemarin — kegagalan total terhadap K1, karena angka jangkar yang salah
-   * lebih buruk daripada tidak ada angka.
+   * Reactive clock. `today` MUST NOT read `Date.now()` directly: that isn't
+   * $state, so nothing triggers a recompute when the day rolls over. An app
+   * left open past midnight would keep showing yesterday's remaining
+   * allowance — a total failure of K1, since a wrong anchor number is worse
+   * than no number at all.
    */
   private now = $state(Date.now())
 
   /**
-   * Denyut jam. 30 detik sekali sudah cukup halus untuk pergantian hari, dan
-   * `visibilitychange` menutup celah utama di ponsel: timer di tab yang
-   * dilatarbelakangi dilambatkan atau dibekukan browser, jadi saat pemakai
-   * kembali membuka aplikasi esok paginya, timer saja tidak bisa diandalkan.
+   * Clock tick. Once every 30 seconds is smooth enough for a day rollover,
+   * and `visibilitychange` closes the main gap on phones: a timer in a
+   * backgrounded tab gets throttled or frozen by the browser, so when the
+   * user reopens the app the next morning, the timer alone can't be trusted.
    */
   startClock(): void {
     if (typeof window === 'undefined') return
@@ -65,7 +65,7 @@ class AppState {
     return this.settings?.dayStartHour ?? 0
   }
 
-  get hariIni(): string {
+  get today(): string {
     return dayKeyOf(this.now, this.dayStartHour)
   }
 
@@ -75,20 +75,20 @@ class AppState {
 
   get cycle(): CycleResult | null {
     if (!this.settings || !this.settings.startedAt) return null
-    return cycleFor(this.hariIni, this.settings)
+    return cycleFor(this.today, this.settings)
   }
 
-  get saldoBelanja(): number {
-    return computeSaldoBelanja(this.wallets, this.transactions)
+  get spendableBalance(): number {
+    return computeSpendableBalance(this.wallets, this.transactions)
   }
 
-  get transaksiHariIni(): Transaction[] {
-    const hari = this.hariIni
-    return this.transactions.filter((t) => t.dayKey === hari)
+  get transactionsToday(): Transaction[] {
+    const day = this.today
+    return this.transactions.filter((t) => t.dayKey === day)
   }
 
-  /** Peta dayKey → total belanja diskresioner (out, commitmentId == null) hari itu. */
-  get belanjaHarianMap(): Record<string, number> {
+  /** Map of dayKey → total discretionary spend (out, commitmentId == null) for that day. */
+  get dailySpendMap(): Record<string, number> {
     const map: Record<string, number> = {}
     for (const t of this.transactions) {
       if (t.kind !== 'out' || t.commitmentId !== null) continue
@@ -97,33 +97,33 @@ class AppState {
     return map
   }
 
-  /** Angka jangkar (spec §4.4). komitmenBelumDibayar = 0 — komitmen di luar cakupan MVP. */
-  get jatah(): HasilJatah | null {
+  /** Anchor number (spec §4.4). unpaidCommitments = 0 — commitments are out of MVP scope. */
+  get allowance(): AllowanceResult | null {
     const cycle = this.cycle
     if (!cycle) return null
-    return hitungJatah({
-      saldoBelanja: this.saldoBelanja,
-      transaksiHariIni: this.transaksiHariIni.map((t) => ({
+    return computeAllowance({
+      spendableBalance: this.spendableBalance,
+      transactionsToday: this.transactionsToday.map((t) => ({
         kind: t.kind,
         amount: t.amount,
         commitmentId: t.commitmentId
       })),
-      komitmenBelumDibayar: 0,
+      unpaidCommitments: 0,
       endBuffer: this.settings?.endBuffer ?? 0,
-      sisaHari: cycle.sisaHari
+      daysRemaining: cycle.daysRemaining
     })
   }
 
-  /** Runway (spec §4.5). biayaKomitmenHarian = 0 — komitmen di luar cakupan MVP. */
-  get runway(): HasilRunway | null {
+  /** Runway (spec §4.5). dailyCommitmentCost = 0 — commitments are out of MVP scope. */
+  get runway(): RunwayResult | null {
     if (!this.settings || !this.settings.startedAt) return null
-    return hitungRunway({
-      hariIni: this.hariIni,
+    return computeRunway({
+      today: this.today,
       startedAt: this.settings.startedAt,
-      belanjaHarianMap: this.belanjaHarianMap,
+      dailySpendMap: this.dailySpendMap,
       seedDailySpend: this.settings.seedDailySpend,
-      saldoBelanja: this.saldoBelanja,
-      biayaKomitmenHarian: 0
+      spendableBalance: this.spendableBalance,
+      dailyCommitmentCost: 0
     })
   }
 
@@ -147,32 +147,33 @@ class AppState {
     return repoTopTags(kind, 5)
   }
 
-  async simpanTransaksi(input: NewTransactionInput): Promise<Transaction> {
+  async saveTransaction(input: NewTransactionInput): Promise<Transaction> {
     const tx = await addTransaction(input, this.dayStartHour)
     await this.load()
     return tx
   }
 
-  async hapusTransaksi(id: string): Promise<void> {
+  async deleteTransaction(id: string): Promise<void> {
     await repoSoftDelete(id)
     await this.load()
   }
 
-  async pulihkanTransaksi(id: string): Promise<void> {
+  async restoreTransaction(id: string): Promise<void> {
     await repoRestore(id)
     await this.load()
   }
 
-  async selesaikanOnboarding(input: {
-    saldoAwal: number
+  async completeOnboarding(input: {
+    initialBalance: number
     seedDailySpend: number
     cycleMode: 'monthly-day' | 'rolling'
     cycleAnchorDay: number
   }): Promise<void> {
-    await createWallet({ name: 'CASH', kind: 'spendable', initialBalance: input.saldoAwal })
-    // Harus memakai dayStartHour yang berlaku, bukan 0 yang dipaku. Kalau keduanya
-    // berbeda, `hariSejakMulai = selisihHari(hariIni, startedAt)` bisa jadi negatif
-    // di jam-jam awal hari, dan bobot ramp cold-start runway ikut negatif.
+    await createWallet({ name: 'CASH', kind: 'spendable', initialBalance: input.initialBalance })
+    // Must use the effective dayStartHour, not a hardcoded 0. If the two
+    // differ, `daysSinceStart = daysBetween(today, startedAt)` could go
+    // negative in the early hours of the day, and the runway cold-start
+    // ramp weight would go negative with it.
     const startedAt = dayKeyOf(Date.now(), this.dayStartHour)
     await repoUpdateSettings({
       seedDailySpend: input.seedDailySpend,
@@ -187,4 +188,4 @@ class AppState {
 
 export const appState = new AppState()
 
-void db // memastikan schema.ts dievaluasi (membuka koneksi) segera saat modul ini diimpor
+void db // ensures schema.ts is evaluated (opens the connection) as soon as this module is imported

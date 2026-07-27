@@ -1,177 +1,177 @@
 import { describe, expect, it } from 'vitest'
-import { bandJatah, hitungJatah, perkiraanLewatJatah } from './allowance'
-import type { HitungJatahInput } from './allowance'
+import { allowanceBand, computeAllowance, projectedOverspend } from './allowance'
+import type { AllowanceInput } from './allowance'
 
-function base(overrides: Partial<HitungJatahInput> = {}): HitungJatahInput {
+function base(overrides: Partial<AllowanceInput> = {}): AllowanceInput {
   return {
-    saldoBelanja: 500_000,
-    transaksiHariIni: [],
-    komitmenBelumDibayar: 0,
+    spendableBalance: 500_000,
+    transactionsToday: [],
+    unpaidCommitments: 0,
     endBuffer: 0,
-    sisaHari: 10,
+    daysRemaining: 10,
     ...overrides
   }
 }
 
-describe('hitungJatah — belanja hari ini tidak dihitung dua kali', () => {
-  it('jatahHariIni stabil terhadap pengeluaran diskresioner sepanjang hari', () => {
-    const saldoAwal = 500_000
-    const sisaHari = 10
-    const belumBelanja = hitungJatah(base({ saldoBelanja: saldoAwal, sisaHari }))
-    const sudahBelanja = hitungJatah(
+describe('computeAllowance — today\'s spending is not double-counted', () => {
+  it('allowanceToday is stable against discretionary spending throughout the day', () => {
+    const initialBalance = 500_000
+    const daysRemaining = 10
+    const beforeSpending = computeAllowance(base({ spendableBalance: initialBalance, daysRemaining }))
+    const afterSpending = computeAllowance(
       base({
-        saldoBelanja: saldoAwal - 50_000,
-        transaksiHariIni: [{ kind: 'out', amount: 50_000, commitmentId: null }],
-        sisaHari
+        spendableBalance: initialBalance - 50_000,
+        transactionsToday: [{ kind: 'out', amount: 50_000, commitmentId: null }],
+        daysRemaining
       })
     )
-    expect(sudahBelanja.jatahHariIni).toBe(belumBelanja.jatahHariIni)
-    expect(sudahBelanja.sisaJatah).toBe(belumBelanja.sisaJatah - 50_000)
+    expect(afterSpending.allowanceToday).toBe(beforeSpending.allowanceToday)
+    expect(afterSpending.remainingAllowance).toBe(beforeSpending.remainingAllowance - 50_000)
   })
 
-  it('beberapa transaksi hari ini terakumulasi tanpa menggerakkan jatahHariIni', () => {
-    const saldoAwal = 500_000
-    const sisaHari = 10
-    const nol = hitungJatah(base({ saldoBelanja: saldoAwal, sisaHari }))
-    const tiga = hitungJatah(
+  it('several transactions today accumulate without moving allowanceToday', () => {
+    const initialBalance = 500_000
+    const daysRemaining = 10
+    const zero = computeAllowance(base({ spendableBalance: initialBalance, daysRemaining }))
+    const three = computeAllowance(
       base({
-        saldoBelanja: saldoAwal - 30_000,
-        transaksiHariIni: [
+        spendableBalance: initialBalance - 30_000,
+        transactionsToday: [
           { kind: 'out', amount: 10_000, commitmentId: null },
           { kind: 'out', amount: 15_000, commitmentId: null },
           { kind: 'out', amount: 5_000, commitmentId: null }
         ],
-        sisaHari
+        daysRemaining
       })
     )
-    expect(tiga.jatahHariIni).toBe(nol.jatahHariIni)
-    expect(tiga.terpakaiHariIni).toBe(30_000)
+    expect(three.allowanceToday).toBe(zero.allowanceToday)
+    expect(three.spentToday).toBe(30_000)
   })
 })
 
-describe('hitungJatah — pemasukan dan hari berikutnya', () => {
-  it('pemasukan di tengah hari menaikkan jatahHariIni seketika (disengaja)', () => {
-    const sisaHari = 10
-    const sebelum = hitungJatah(base({ saldoBelanja: 300_000, sisaHari }))
-    const sesudah = hitungJatah(
+describe('computeAllowance — income and the next day', () => {
+  it('income received mid-day raises allowanceToday immediately (intentional)', () => {
+    const daysRemaining = 10
+    const before = computeAllowance(base({ spendableBalance: 300_000, daysRemaining }))
+    const after = computeAllowance(
       base({
-        saldoBelanja: 300_000 + 200_000,
-        transaksiHariIni: [{ kind: 'in', amount: 200_000, commitmentId: null }],
-        sisaHari
+        spendableBalance: 300_000 + 200_000,
+        transactionsToday: [{ kind: 'in', amount: 200_000, commitmentId: null }],
+        daysRemaining
       })
     )
-    expect(sesudah.jatahHariIni).toBeGreaterThan(sebelum.jatahHariIni)
+    expect(after.allowanceToday).toBeGreaterThan(before.allowanceToday)
   })
 
-  it('boros hari ini menurunkan jatahHariIni besok', () => {
-    const saldoAwal = 500_000
-    const sisaHariBesok = 9 // satu hari sudah lewat
-    const jatahBesokBoros = hitungJatah(
-      base({ saldoBelanja: saldoAwal - 100_000, sisaHari: sisaHariBesok })
-    ).jatahHariIni
-    const jatahBesokHemat = hitungJatah(
-      base({ saldoBelanja: saldoAwal - 10_000, sisaHari: sisaHariBesok })
-    ).jatahHariIni
-    expect(jatahBesokBoros).toBeLessThan(jatahBesokHemat)
+  it('overspending today lowers allowanceToday tomorrow', () => {
+    const initialBalance = 500_000
+    const daysRemainingTomorrow = 9 // one day has already passed
+    const tomorrowOverspent = computeAllowance(
+      base({ spendableBalance: initialBalance - 100_000, daysRemaining: daysRemainingTomorrow })
+    ).allowanceToday
+    const tomorrowFrugal = computeAllowance(
+      base({ spendableBalance: initialBalance - 10_000, daysRemaining: daysRemainingTomorrow })
+    ).allowanceToday
+    expect(tomorrowOverspent).toBeLessThan(tomorrowFrugal)
   })
 })
 
-describe('hitungJatah — komitmen (parameter tetap ada meski di luar cakupan MVP)', () => {
-  it('komitmen belum dibayar mengurangi jatah sejak hari pertama siklus', () => {
-    const tanpaKomitmen = hitungJatah(base({ saldoBelanja: 3_000_000, sisaHari: 26 }))
-    const denganKomitmen = hitungJatah(
-      base({ saldoBelanja: 3_000_000, komitmenBelumDibayar: 2_000_000, sisaHari: 26 })
+describe('computeAllowance — commitments (parameter stays even though out of MVP scope)', () => {
+  it('unpaid commitments reduce the allowance from the first day of the cycle', () => {
+    const withoutCommitment = computeAllowance(base({ spendableBalance: 3_000_000, daysRemaining: 26 }))
+    const withCommitment = computeAllowance(
+      base({ spendableBalance: 3_000_000, unpaidCommitments: 2_000_000, daysRemaining: 26 })
     )
-    // Contoh persis dari spec §4.4: dana = 3.000.000 - 2.000.000 = 1.000.000,
-    // jatah = floor(1.000.000 / 26) = 38.461.
-    expect(denganKomitmen.jatahHariIni).toBe(38_461)
-    expect(denganKomitmen.jatahHariIni).toBeLessThan(tanpaKomitmen.jatahHariIni)
+    // Exact example from spec §4.4: funds = 3,000,000 - 2,000,000 = 1,000,000,
+    // allowance = floor(1,000,000 / 26) = 38,461.
+    expect(withCommitment.allowanceToday).toBe(38_461)
+    expect(withCommitment.allowanceToday).toBeLessThan(withoutCommitment.allowanceToday)
   })
 
-  it('membayar komitmen di tengah siklus tidak menimbulkan lonjakan maupun tebing', () => {
-    const sisaHari = 6
-    const saldoSebelumBayar = 1_200_000 // dompet masih memuat dana sewa yang belum dibayar
-    const sebelum = hitungJatah(
-      base({ saldoBelanja: saldoSebelumBayar, komitmenBelumDibayar: 800_000, sisaHari })
+  it('paying a commitment mid-cycle causes neither a spike nor a cliff', () => {
+    const daysRemaining = 6
+    const balanceBeforePaying = 1_200_000 // wallet still holds the unpaid rent
+    const before = computeAllowance(
+      base({ spendableBalance: balanceBeforePaying, unpaidCommitments: 800_000, daysRemaining })
     )
-    const saldoSesudahBayar = saldoSebelumBayar - 800_000 // sewa dibayar, keluar dari dompet
-    const sesudah = hitungJatah(
+    const balanceAfterPaying = balanceBeforePaying - 800_000 // rent paid, leaves the wallet
+    const after = computeAllowance(
       base({
-        saldoBelanja: saldoSesudahBayar,
-        transaksiHariIni: [{ kind: 'out', amount: 800_000, commitmentId: 'sewa' }],
-        komitmenBelumDibayar: 0,
-        sisaHari
+        spendableBalance: balanceAfterPaying,
+        transactionsToday: [{ kind: 'out', amount: 800_000, commitmentId: 'rent' }],
+        unpaidCommitments: 0,
+        daysRemaining
       })
     )
-    expect(sesudah.jatahHariIni).toBe(sebelum.jatahHariIni)
-    // Pembayaran komitmen dikecualikan dari belanja diskresioner.
-    expect(sesudah.terpakaiHariIni).toBe(0)
+    expect(after.allowanceToday).toBe(before.allowanceToday)
+    // Commitment payments are excluded from discretionary spending.
+    expect(after.spentToday).toBe(0)
   })
 })
 
-describe('hitungJatah — kondisi minus', () => {
-  it('danaTersedia <= 0 → jatah 0 dan status minus, bukan angka negatif', () => {
-    const r = hitungJatah(base({ saldoBelanja: 100, komitmenBelumDibayar: 500, sisaHari: 5 }))
-    expect(r.jatahHariIni).toBe(0)
+describe('computeAllowance — minus condition', () => {
+  it('availableFunds <= 0 → allowance 0 and status minus, not a negative number', () => {
+    const r = computeAllowance(base({ spendableBalance: 100, unpaidCommitments: 500, daysRemaining: 5 }))
+    expect(r.allowanceToday).toBe(0)
     expect(r.status).toBe('minus')
-    expect(r.danaTersedia).toBeLessThan(0)
+    expect(r.availableFunds).toBeLessThan(0)
   })
 
-  it('endBuffer lebih besar dari saldo → minus', () => {
-    const r = hitungJatah(base({ saldoBelanja: 50_000, endBuffer: 100_000, sisaHari: 10 }))
+  it('endBuffer larger than the balance → minus', () => {
+    const r = computeAllowance(base({ spendableBalance: 50_000, endBuffer: 100_000, daysRemaining: 10 }))
     expect(r.status).toBe('minus')
-    expect(r.jatahHariIni).toBe(0)
+    expect(r.allowanceToday).toBe(0)
   })
 
-  it('nol dompet spendable → danaTersedia 0, status minus, jatah 0', () => {
-    const r = hitungJatah(base({ saldoBelanja: 0, sisaHari: 10 }))
-    expect(r.danaTersedia).toBe(0)
+  it('zero spendable wallets → availableFunds 0, status minus, allowance 0', () => {
+    const r = computeAllowance(base({ spendableBalance: 0, daysRemaining: 10 }))
+    expect(r.availableFunds).toBe(0)
     expect(r.status).toBe('minus')
-    expect(r.jatahHariIni).toBe(0)
+    expect(r.allowanceToday).toBe(0)
   })
 
-  it('sisaJatah < 0 dengan danaTersedia > 0 → status lewat', () => {
-    const r = hitungJatah(
+  it('remainingAllowance < 0 with availableFunds > 0 → status lewat', () => {
+    const r = computeAllowance(
       base({
-        saldoBelanja: 100_000,
-        transaksiHariIni: [{ kind: 'out', amount: 200_000, commitmentId: null }],
-        sisaHari: 10
+        spendableBalance: 100_000,
+        transactionsToday: [{ kind: 'out', amount: 200_000, commitmentId: null }],
+        daysRemaining: 10
       })
     )
     expect(r.status).toBe('lewat')
-    expect(r.sisaJatah).toBeLessThan(0)
+    expect(r.remainingAllowance).toBeLessThan(0)
   })
 })
 
-describe('bandJatah — perlakuan visual anti-pembiasaan', () => {
-  it('tenang di bawah 60%', () => {
-    expect(bandJatah(0)).toBe('tenang')
-    expect(bandJatah(0.59)).toBe('tenang')
+describe('allowanceBand — anti-habituation visual treatment', () => {
+  it('tenang below 60%', () => {
+    expect(allowanceBand(0)).toBe('tenang')
+    expect(allowanceBand(0.59)).toBe('tenang')
   })
 
   it('waspada 60–90%', () => {
-    expect(bandJatah(0.6)).toBe('waspada')
-    expect(bandJatah(0.89)).toBe('waspada')
+    expect(allowanceBand(0.6)).toBe('waspada')
+    expect(allowanceBand(0.89)).toBe('waspada')
   })
 
   it('mendesak 90–100%', () => {
-    expect(bandJatah(0.9)).toBe('mendesak')
-    expect(bandJatah(1)).toBe('mendesak')
+    expect(allowanceBand(0.9)).toBe('mendesak')
+    expect(allowanceBand(1)).toBe('mendesak')
   })
 
-  it('terlampaui di atas 100%, dan saat null (kondisi minus)', () => {
-    expect(bandJatah(1.01)).toBe('terlampaui')
-    expect(bandJatah(null)).toBe('terlampaui')
+  it('terlampaui above 100%, and when null (minus condition)', () => {
+    expect(allowanceBand(1.01)).toBe('terlampaui')
+    expect(allowanceBand(null)).toBe('terlampaui')
   })
 })
 
-describe('perkiraanLewatJatah — intervensi di detik keputusan', () => {
-  it('0 bila nominal tidak melewati sisa jatah', () => {
-    expect(perkiraanLewatJatah(10_000, 20_000)).toBe(0)
-    expect(perkiraanLewatJatah(20_000, 20_000)).toBe(0)
+describe('projectedOverspend — intervention at the moment of decision', () => {
+  it('0 when the amount does not exceed the remaining allowance', () => {
+    expect(projectedOverspend(10_000, 20_000)).toBe(0)
+    expect(projectedOverspend(20_000, 20_000)).toBe(0)
   })
 
-  it('mengembalikan besaran lewatnya bila nominal melewati sisa jatah', () => {
-    expect(perkiraanLewatJatah(32_500, 20_000)).toBe(12_500)
+  it('returns the overspend amount when the amount exceeds the remaining allowance', () => {
+    expect(projectedOverspend(32_500, 20_000)).toBe(12_500)
   })
 })

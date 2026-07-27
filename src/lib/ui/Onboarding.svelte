@@ -1,27 +1,28 @@
 <script lang="ts">
-  // Onboarding (spec §7.5). MVP: 2 dari 3 jalur siklus — tanggal tetap
-  // bulanan, atau "tidak tentu" (rolling). Mode manual dilewati untuk MVP.
+  // Onboarding (spec §7.5). MVP: 2 of 3 cycle paths — fixed monthly date, or
+  // "not fixed" (rolling). Manual mode is skipped for the MVP.
 
   import { appState } from '../stores/appState.svelte'
   import { formatRupiah } from '../domain/money'
 
   let step = $state(1)
-  let saldoAwal = $state('')
+  let initialBalance = $state('')
   let seedDailySpend = $state('')
   let cyclePath = $state<'monthly' | 'rolling' | null>(null)
   let anchorDay = $state('1')
   let submitting = $state(false)
 
-  const saldoAwalNum = $derived(Math.floor(Number(saldoAwal) || 0))
+  const initialBalanceNum = $derived(Math.floor(Number(initialBalance) || 0))
   const seedNum = $derived(Math.floor(Number(seedDailySpend) || 0))
   const anchorDayNum = $derived(Math.min(31, Math.max(1, Number(anchorDay) || 1)))
 
-  // Onboarding inilah yang membuat angka jangkar dan runway berfungsi sejak hari
-  // pertama (spec §7.5). Melewatinya dengan nilai kosong menghasilkan saldo 0 dan
-  // seed 0 — aplikasi lalu terkunci permanen di status "minus" dengan runway "—"
-  // tanpa pernah menjelaskan kenapa. Nilai negatif lebih buruk lagi: dompet
-  // bersaldo minus membuat setiap rumus di §4 melenceng sejak awal.
-  const saldoValid = $derived(saldoAwalNum > 0)
+  // Onboarding is what makes the anchor number and runway work from day one
+  // (spec §7.5). Skipping through with empty values produces a balance of 0
+  // and a seed of 0 — the app then locks permanently into "minus" status
+  // with a "—" runway, never explaining why. Negative values are worse
+  // still: a wallet with a negative balance skews every formula in §4 from
+  // the start.
+  const initialBalanceValid = $derived(initialBalanceNum > 0)
   const seedValid = $derived(seedNum > 0)
 
   function next() {
@@ -32,10 +33,10 @@
     step -= 1
   }
 
-  async function selesai() {
+  async function complete() {
     submitting = true
-    await appState.selesaikanOnboarding({
-      saldoAwal: saldoAwalNum,
+    await appState.completeOnboarding({
+      initialBalance: initialBalanceNum,
       seedDailySpend: seedNum,
       cycleMode: cyclePath === 'monthly' ? 'monthly-day' : 'rolling',
       cycleAnchorDay: cyclePath === 'monthly' ? anchorDayNum : 1
@@ -48,13 +49,13 @@
   {#if step === 1}
     <h1>Uangmu sekarang berapa?</h1>
     <p class="hint">Ini jadi saldo awal dompet CASH kamu.</p>
-    <input type="number" inputmode="numeric" min="1" step="1" placeholder="0" bind:value={saldoAwal} />
-    {#if saldoAwal !== '' && !saldoValid}
+    <input type="number" inputmode="numeric" min="1" step="1" placeholder="0" bind:value={initialBalance} />
+    {#if initialBalance !== '' && !initialBalanceValid}
       <p class="hint error">Isi dengan angka lebih dari nol.</p>
     {/if}
     <div class="actions">
       <span></span>
-      <button class="btn-primary" disabled={!saldoValid} onclick={next}>Lanjut</button>
+      <button class="btn-primary" disabled={!initialBalanceValid} onclick={next}>Lanjut</button>
     </div>
   {:else if step === 2}
     <h1>Sehari kira-kira habis berapa?</h1>
@@ -98,8 +99,8 @@
       <button class="btn-text" onclick={back}>Kembali</button>
       <button
         class="btn-primary"
-        disabled={cyclePath === null || submitting || !saldoValid || !seedValid}
-        onclick={selesai}
+        disabled={cyclePath === null || submitting || !initialBalanceValid || !seedValid}
+        onclick={complete}
       >
         Mulai
       </button>
@@ -107,6 +108,6 @@
   {/if}
 
   <p class="hint">
-    Saldo: {formatRupiah(saldoAwalNum)} · Harian: {formatRupiah(seedNum)}
+    Saldo: {formatRupiah(initialBalanceNum)} · Harian: {formatRupiah(seedNum)}
   </p>
 </div>

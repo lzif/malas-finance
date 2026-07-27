@@ -2,10 +2,10 @@
   import { onMount } from 'svelte'
   import { appState } from './lib/stores/appState.svelte'
   import Onboarding from './lib/ui/Onboarding.svelte'
-  import Catat from './lib/ui/Catat.svelte'
-  import Riwayat from './lib/ui/Riwayat.svelte'
+  import Record from './lib/ui/Record.svelte'
+  import History from './lib/ui/History.svelte'
 
-  let screen = $state<'catat' | 'riwayat'>('catat')
+  let screen = $state<'record' | 'history'>('record')
 
   onMount(() => {
     appState.load()
@@ -17,13 +17,13 @@
 {:else if !appState.onboarded}
   <Onboarding />
 {:else}
-  {#if screen === 'catat'}
-    <Catat />
+  {#if screen === 'record'}
+    <Record />
   {:else}
-    <Riwayat />
+    <History />
   {/if}
   <nav class="nav">
-    <button class:active={screen === 'catat'} onclick={() => (screen = 'catat')}>Catat</button>
-    <button class:active={screen === 'riwayat'} onclick={() => (screen = 'riwayat')}>Riwayat</button>
+    <button class:active={screen === 'record'} onclick={() => (screen = 'record')}>Catat</button>
+    <button class:active={screen === 'history'} onclick={() => (screen = 'history')}>Riwayat</button>
   </nav>
 {/if}

@@ -1,5 +1,5 @@
-// domain/money.ts — format dan parsing rupiah. Fungsi murni.
-// Uang disimpan sebagai rupiah bulat dalam `number` (spec §5.2).
+// domain/money.ts — rupiah formatting and parsing. Pure functions.
+// Money is stored as whole rupiah in a `number` (spec §5.2).
 
 /** 1234500 → "Rp 1.234.500" */
 export function formatRupiah(amount: number): string {
@@ -9,13 +9,13 @@ export function formatRupiah(amount: number): string {
   return `${sign}Rp ${grouped}`
 }
 
-/** Format tanpa "Rp", dipakai di slot keypad besar: 1234500 → "1.234.500" */
-export function formatAngka(amount: number): string {
+/** Format without "Rp", used in the large keypad slot: 1234500 → "1.234.500" */
+export function formatNumber(amount: number): string {
   const digits = Math.round(Math.abs(amount)).toString()
   return digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
 }
 
-/** Buang semua kecuali digit lalu parse ke integer. "" → 0. */
+/** Strip everything but digits, then parse as an integer. "" → 0. */
 export function parseRupiah(input: string): number {
   const digits = input.replace(/[^\d]/g, '')
   if (digits === '') return 0

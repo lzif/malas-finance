@@ -1,6 +1,6 @@
-// db/repo/transactions.ts — satu-satunya jalur tulis ke tabel transactions.
-// Menegakkan aturan integritas §5.1 di lapisan repository, bukan hanya UI —
-// UI bisa dilewati, repository tidak.
+// db/repo/transactions.ts — the only write path to the transactions table.
+// Enforces the integrity rules from §5.1 at the repository layer, not just
+// the UI — the UI can be bypassed, the repository cannot.
 
 import { db, type Intent, type Transaction } from '../schema'
 import { dayKeyOf } from '../../domain/day'
@@ -16,40 +16,40 @@ export interface NewTransactionInput {
   walletId: string
   toWalletId: string | null
   commitmentId: string | null
-  /** epoch ms. Default: sekarang. */
+  /** epoch ms. Default: now. */
   at?: number
 }
 
 function validate(input: NewTransactionInput, dayStartHour: number, now: number): void {
   if (!Number.isInteger(input.amount) || input.amount <= 0) {
-    throw new ValidationError('amount harus bilangan bulat positif')
+    throw new ValidationError('amount must be a positive integer')
   }
 
   const requiresIntent = input.kind === 'out'
   const hasIntent = input.intent !== null
   if (requiresIntent !== hasIntent) {
-    throw new ValidationError('intent wajib bila dan hanya bila kind === "out"')
+    throw new ValidationError('intent is required if and only if kind === "out"')
   }
 
   const requiresToWallet = input.kind === 'move'
   const hasToWallet = input.toWalletId !== null
   if (requiresToWallet !== hasToWallet) {
-    throw new ValidationError('toWalletId wajib bila dan hanya bila kind === "move"')
+    throw new ValidationError('toWalletId is required if and only if kind === "move"')
   }
 
   if (input.toWalletId !== null && input.toWalletId === input.walletId) {
-    throw new ValidationError('walletId dan toWalletId tidak boleh sama')
+    throw new ValidationError('walletId and toWalletId must not be the same')
   }
 
   if (input.note !== null && input.note.length > 200) {
-    throw new ValidationError('note maksimal 200 karakter')
+    throw new ValidationError('note must be at most 200 characters')
   }
 
   const at = input.at ?? now
   const dayKeyOfAt = dayKeyOf(at, dayStartHour)
   const dayKeyOfNow = dayKeyOf(now, dayStartHour)
   if (dayKeyOfAt > dayKeyOfNow) {
-    throw new ValidationError('at tidak boleh melewati akhir hari ini')
+    throw new ValidationError('at must not be later than the end of today')
   }
 }
 
@@ -82,12 +82,12 @@ export async function addTransaction(
   return tx
 }
 
-/** Soft-delete: tandai deletedAt, tidak pernah menghapus baris sungguhan. */
+/** Soft-delete: mark deletedAt, never actually remove the row. */
 export async function softDelete(id: string): Promise<void> {
   await db.transactions.update(id, { deletedAt: Date.now(), updatedAt: Date.now() })
 }
 
-/** Pulihkan entri dari trash. */
+/** Restore an entry from the trash. */
 export async function restore(id: string): Promise<void> {
   await db.transactions.update(id, { deletedAt: null, updatedAt: Date.now() })
 }
@@ -97,7 +97,7 @@ export async function activeTransactionsForDay(dayKey: string): Promise<Transact
   return rows.filter((t) => t.deletedAt === null)
 }
 
-/** Seluruh transaksi aktif, diurutkan terbaru dulu. Cukup untuk MVP (tanpa filter). */
+/** All active transactions, newest first. Sufficient for the MVP (no filters). */
 export async function allActiveTransactions(): Promise<Transaction[]> {
   const rows = await db.transactions.toArray()
   return rows.filter((t) => t.deletedAt === null).sort((a, b) => b.at - a.at)
@@ -109,8 +109,8 @@ export async function recentTransactions(limit: number): Promise<Transaction[]> 
 }
 
 /**
- * Tag yang paling sering dipakai 30 hari terakhir untuk `kind` tertentu.
- * Dipakai untuk chip tag yang "dipelajari dari riwayat" (spec §7.1).
+ * The most frequently used tags in the last 30 days for a given `kind`.
+ * Used for the tag chips "learned from history" (spec §7.1).
  */
 export async function topTags(kind: Transaction['kind'], limit: number): Promise<string[]> {
   const rows = await allActiveTransactions()

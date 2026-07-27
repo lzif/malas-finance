@@ -1,5 +1,5 @@
-// db/schema.ts — skema Dexie (spec §5.2). Ini satu-satunya tempat yang boleh
-// tahu bahwa IndexedDB ada. domain/ tidak boleh mengimpor berkas ini.
+// db/schema.ts — Dexie schema (spec §5.2). The only place allowed to know
+// IndexedDB exists. domain/ must not import this file.
 
 import Dexie, { type Table } from 'dexie'
 import type { Kind } from '../domain/types'
@@ -43,14 +43,14 @@ export interface Commitment {
 }
 
 export interface NotifSettings {
-  jatahTerlampaui: boolean
-  belumMencatat: boolean
-  ringkasanHarian: boolean
-  rekapMingguan: boolean
-  jamHarian: number
-  jamBelumMencatat: number
-  hariRekap: number
-  jamRekap: number
+  allowanceExceeded: boolean
+  noEntryReminder: boolean
+  dailySummary: boolean
+  weeklyRecap: boolean
+  dailySummaryHour: number
+  noEntryReminderHour: number
+  weeklyRecapDay: number
+  weeklyRecapHour: number
 }
 
 export interface Settings {
@@ -68,14 +68,14 @@ export interface Settings {
 }
 
 export const DEFAULT_NOTIF: NotifSettings = {
-  jatahTerlampaui: false,
-  belumMencatat: false,
-  ringkasanHarian: false,
-  rekapMingguan: false,
-  jamHarian: 21,
-  jamBelumMencatat: 20,
-  hariRekap: 0,
-  jamRekap: 20
+  allowanceExceeded: false,
+  noEntryReminder: false,
+  dailySummary: false,
+  weeklyRecap: false,
+  dailySummaryHour: 21,
+  noEntryReminderHour: 20,
+  weeklyRecapDay: 0,
+  weeklyRecapHour: 20
 }
 
 export const DEFAULT_SETTINGS: Settings = {
