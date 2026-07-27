@@ -71,7 +71,7 @@ Diambil lewat wawancara berjenjang, lalu diuji lewat review adversarial (§13).
 | D3 | Stack | Svelte + Vite + Capacitor | Paling sedikit kode, dev loop instan di Termux, tetap dapat APK |
 | D4 | Tata letak | Input dulu, insight sekali sentuh | Kalau input lambat, tidak ada data untuk disadari |
 | D5 | Angka jangkar | Jatah harian, runway lapis kedua | Jatah = actionable, runway = konteks |
-| D6 | Taksonomi | Niat: Terencana/Rutin/Impulsif/**Darurat** | Darurat ditambah setelah review (§13, UX-02) |
+| D6 | Taksonomi | Niat: Terencana/Rutin/Impulsif/**Darurat** | Darurat ditambah setelah review (§13.1, UX-02) |
 | D7 | Notifikasi | Mode aktif | Sesuai K3 |
 | D8 | Dompet | Multi-dompet, tanpa jenis transaksi transfer khusus | Saldo akurat tanpa kerumitan biaya admin |
 | D9 | Cold start | Seed lewat onboarding 3 pertanyaan | Menyelesaikan kontradiksi D2 tanpa membatalkannya |
@@ -92,6 +92,14 @@ dayKeyOf(at, dayStartHour) = format(new Date(at - dayStartHour * 3_600_000), 'YY
 ```
 
 `dayKey` **disimpan di baris transaksi** dan diindeks. Query harian jadi lookup indeks, bukan pemindaian dengan konversi tanggal.
+
+**Selisih hari.** Didefinisikan eksplisit karena seluruh matematika siklus dan cold-start bergantung padanya, dan salah tafsir satu angka di sini menggeser setiap hitungan di dokumen ini:
+
+```
+selisihHari(a, b) = floor((tanggalDari(a) − tanggalDari(b)) / 86_400_000)
+```
+
+Kedua argumen berupa string `dayKey`, jadi `dayStartHour` sudah terserap di dalamnya dan tidak boleh diterapkan dua kali. **`selisihHari(x, x) === 0`.** Konsekuensinya mengikat: `sisaHari` di hari terakhir siklus bernilai `0 + 1 = 1` (bukan 2), dan `hariSejakMulai` di hari pertama bernilai `0` — yang lalu memicu penjagaan `N > 0` di §4.5. Menafsirkannya sebagai hitungan inklusif akan membelah dua jatah harian di hari terakhir siklus dan merusak ramp cold-start.
 
 **Saldo dompet.**
 ```
@@ -133,24 +141,48 @@ Penjepitan `max(1, …)` adalah pertahanan mutlak terhadap pembagian nol di hari
 
 ### 4.3 Komitmen
 
-Entitas yang **tidak ada di desain awal** dan ditambahkan setelah review menemukan bahwa tanpanya angka jangkar berbohong setiap hari (§13, M-02).
+Entitas yang **tidak ada di desain awal** dan ditambahkan setelah review menemukan bahwa tanpanya angka jangkar berbohong setiap hari (§13.1, M-02).
 
 ```
-Commitment { id, name, amount, dueDay: 1..31, walletId?, active, paidCycles: string[] }
+Commitment { id, name, amount, kind: 'bill' | 'saving', dueDay: 1..31, walletId?, active }
 ```
 
-`paidCycles` berisi daftar kunci siklus (mis. `"2026-07"`) yang komitmen ini sudah dibayar.
+**Status lunas tidak disimpan — ia diturunkan dari transaksi.** Ini keputusan yang menentukan, diambil setelah review kedua (§13.2) menunjukkan bahwa menyimpan daftar `paidCycles` melahirkan tiga cacat sekaligus: tulis-ganda tanpa atomisitas, tidak adanya sinkronisasi balik saat pembayaran dihapus, dan kunci siklus yang mustahil didefinisikan untuk mode `manual` dan `rolling`. Menurunkannya dari transaksi menghapus ketiganya di akar, dan menghasilkan kode yang lebih sedikit.
+
+**Jendela komitmen.**
+```
+jendelaKomitmen = [awalBulanIni, cycleEnd]
+```
+
+Satu aturan yang berlaku untuk ketiga mode siklus. Batas bawahnya adalah awal bulan berjalan, bukan hari ini — inilah yang membuat tagihan yang **sudah lewat jatuh tempo tapi belum dibayar** tetap terhitung. Batas bawah `hariIni` pada desain sebelumnya menghasilkan perilaku yang justru merusak: kamu lupa bayar listrik tanggal 10, lalu tanggal 11 aplikasi memberi tahu bahwa uangmu **bertambah**. Angka jangkar yang mengganjar kelalaian lebih buruk daripada tidak ada angka sama sekali.
 
 ```
+sudahDibayar(c) = ada transaksi aktif dengan
+                    commitmentId == c.id
+                 && dayKey ∈ jendelaKomitmen
+
 komitmenBelumDibayar = Σ c.amount
   untuk c.active
-   && jatuhTempo(c, siklusSaatIni) ∈ [hariIni, cycleEnd]
-   && cycleKey ∉ c.paidCycles
+   && kejadianJatuhTempo(c) ∈ jendelaKomitmen
+   && !sudahDibayar(c)
 ```
 
-Membayar komitmen dilakukan dari layar Komitmen lewat tombol **Bayar**, yang membuat transaksi `out` dengan `commitmentId` terisi, `intent = 'routine'` otomatis, dan menandai siklus ini lunas. Tidak ada deteksi otomatis dari transaksi biasa — terlalu rawan salah tebak, dan jalur satu tap sudah cukup cepat.
+Karena `sudahDibayar` adalah query, menghapus pembayaran ke trash otomatis membuat komitmennya kembali belum lunas, dan memulihkannya membuatnya lunas lagi. Tidak ada kode sinkronisasi yang perlu ditulis, jadi tidak ada kode sinkronisasi yang bisa salah.
+
+**Membayar.** Dari layar Komitmen lewat tombol **Bayar**, yang membuat satu transaksi dengan `commitmentId` terisi dan `intent = 'routine'` otomatis. Satu penulisan, satu tabel — tidak butuh transaksi lintas-tabel. Tombolnya idempoten: bila `sudahDibayar(c)` sudah benar, tombol berubah jadi label "lunas" dan tidak bisa ditekan lagi. Tidak ada deteksi otomatis dari transaksi biasa — terlalu rawan salah tebak.
+
+**Dua jenis komitmen.**
+
+| `kind` | Dipenuhi dengan | Efek |
+|---|---|---|
+| `bill` | Transaksi `out` | Uang keluar dari sistem |
+| `saving` | Transaksi `move` ke dompet `reserve` | Uang pindah ke tabungan |
+
+Jenis `saving` ada untuk menyelesaikan cacat perilaku yang ditemukan review kedua: tanpanya, memindahkan Rp 500.000 ke tabungan **menurunkan jatah harian secara mendadak**, sehingga aplikasi terasa menghukum tepat pada perilaku yang seharusnya ia dorong. Dengan menabung dimodelkan sebagai komitmen, uangnya sudah dipotong di muka sejak awal siklus — memindahkannya ke `reserve` tidak mengubah jatah sama sekali, karena jatah itu memang sudah tidak pernah menghitungnya. Menabung berubah dari kejutan jadi rencana.
 
 **Konsekuensi penting:** transaksi ber-`commitmentId` **dikecualikan dari belanja diskresioner**. Ia bukan cerminan kebiasaan; ia kewajiban yang sudah diperhitungkan di muka.
+
+**Edge case.** Komitmen dengan `amount` melebihi `saldoBelanja` membuat `danaTersedia` negatif — ditangani sebagai kondisi minus (§4.4), bukan error. Komitmen yang dibuat di tengah siklus langsung ikut terhitung bila kejadian jatuh temponya masih di dalam jendela. `dueDay` 29–31 di bulan pendek dijepit ke hari terakhir bulan, sama seperti `cycleAnchorDay` (§4.2).
 
 ### 4.4 Jatah harian
 
@@ -164,7 +196,22 @@ jatahHariIni    = danaTersedia > 0 ? floor(danaTersedia / sisaHari) : 0
 sisaJatah       = jatahHariIni − terpakaiHariIni
 ```
 
-**Kenapa `basisJatah` menambahkan kembali belanja hari ini.** `saldoBelanja` sudah berkurang oleh pengeluaran hari ini. Kalau `jatahHariIni` dihitung langsung darinya lalu `terpakaiHariIni` dikurangkan lagi, pengeluaran yang sama dihukum dua kali dan angkanya bergerak liar sepanjang hari. Dengan menambahkannya kembali, `jatahHariIni` **stabil sepanjang hari** dan hanya `sisaJatah` yang turun — persis seperti saldo amplop yang menipis. Efek "boros hari ini → jatah besok turun" tetap muncul, karena besok `saldoBelanja` sudah lebih kecil sementara `sisaHari` berkurang satu.
+**Kenapa `basisJatah` menambahkan kembali belanja hari ini.** `saldoBelanja` sudah berkurang oleh pengeluaran hari ini. Kalau `jatahHariIni` dihitung langsung darinya lalu `terpakaiHariIni` dikurangkan lagi, pengeluaran yang sama dihukum dua kali dan angkanya bergerak liar sepanjang hari. Dengan menambahkannya kembali, `jatahHariIni` stabil dan hanya `sisaJatah` yang turun — persis seperti saldo amplop yang menipis. Efek "boros hari ini → jatah besok turun" tetap muncul, karena besok `saldoBelanja` sudah lebih kecil sementara `sisaHari` berkurang satu.
+
+**Batas kestabilan itu, dinyatakan jujur.** Penambahan-kembali hanya menetralkan **pengeluaran diskresioner**. Ia tidak menetralkan apa pun yang lain, dan memang tidak seharusnya:
+
+| Kejadian di tengah hari | `jatahHariIni` | Benar? |
+|---|---|---|
+| Belanja diskresioner | tidak berubah | ya — inti mekanismenya |
+| Pemasukan diterima | **naik seketika** | ya — uangmu memang bertambah |
+| Bayar komitmen | tidak berubah | ya — saldo dan kewajiban turun bersamaan |
+| Pindah ke dompet `reserve` | tidak berubah bila lewat komitmen `saving` (§4.3) | ya |
+| Riwayat lama diedit/dihapus | berubah | ya, tapi **wajib dijelaskan** (§7.1) |
+| `endBuffer` diubah | berubah | ya, tapi **wajib dipratinjau** (§7.4) |
+
+Klaim yang berlaku adalah "stabil terhadap pengeluaran diskresioner sepanjang hari", bukan "stabil sepanjang hari". Versi kedua dari klaim itu keliru, dan review kedua benar menangkapnya (§13.2, C-02).
+
+**Perubahan yang tidak berasal dari hari ini wajib punya penjelasan.** Bila `jatahHariIni` berubah karena riwayat lama diedit, dihapus, dipulihkan, atau karena pengaturan diubah, layar Catat menampilkan banner sekali-lewat: *"Jatah berubah karena riwayat diubah"* atau *"Jatah berubah karena buffer diubah"*. Angka jangkar yang bergerak tanpa sebab yang terlihat adalah angka jangkar yang berhenti dipercaya.
 
 **Verifikasi dengan kasus yang meruntuhkan desain awal:**
 
@@ -195,7 +242,8 @@ Angka negatif raksasa itu menghukum tanpa memberi arah. Kalimat eksplisit member
 hariSejakMulai    = selisihHari(hariIni, settings.startedAt)           // 0 pada hari pertama
 belanjaHarian(d)  = Σ amount  untuk out, dayKey == d, commitmentId == null
 N                 = min(28, hariSejakMulai)
-rataAktual        = N > 0 ? mean(belanjaHarian(d)) untuk N hari terakhir : 0   // hari tanpa belanja dihitung 0
+jendelaRata       = [hariIni − N, hariIni − 1]                        // TIDAK termasuk hari ini
+rataAktual        = N > 0 ? mean(belanjaHarian(d)) untuk d ∈ jendelaRata : 0   // hari tanpa belanja dihitung 0
 w                 = min(1, hariSejakMulai / 14)
 rataHarian        = w × rataAktual + (1 − w) × seedDailySpend
 biayaKomitmenHarian = Σ(komitmen aktif) / panjangSiklus
@@ -205,9 +253,11 @@ runway            = biayaHarianTotal > 0 ? floor(saldoBelanja / biayaHarianTotal
 
 Penjagaan `N > 0` bukan hiasan: tanpanya, `mean([])` menghasilkan `NaN`, dan `0 × NaN` di JavaScript tetap `NaN` — jadi bobot nol **tidak** menyelamatkan hari pertama. Ini harus diuji secara eksplisit (§10.1).
 
-**Tidak ada trimming outlier.** Desain awal membuang 2 hari terboros untuk meredam satu pembelian besar. Review menunjukkan itu justru membuang sewa, listrik, dan pupuk — pengeluaran terbesar dan paling nyata — sehingga runway jadi optimistis palsu (§13, M-03). Karena komitmen kini dimodelkan terpisah dan eksplisit, sumber distorsinya hilang di akar. Rumusnya jadi lebih jujur **dan** lebih pendek.
+**Hari ini sengaja dikeluarkan dari jendela rata-rata.** Hari yang sedang berjalan adalah data separuh jadi. Kalau ikut dihitung, pukul sembilan pagi ia menyumbang Rp 0 dan menyeret rata-rata turun, sehingga runway terlihat lebih panjang justru di saat kamu belum belanja apa-apa — lalu memendek sepanjang hari. Runway yang berkedip sepanjang hari adalah runway yang tidak dipercaya.
 
-**Cold start.** `seedDailySpend` diisi saat onboarding ("sehari kira-kira habis berapa?"). Bobotnya meluruh linear selama 14 hari sampai murni data asli. Selama `w < 1`, antarmuka menandai angkanya dengan label `perkiraan`. Ini menyelesaikan kontradiksi antara D2 (buang semua data) dan metrik yang butuh 28 hari data (§13, CS-01), **tanpa** membatalkan keputusan buang-data.
+**Tidak ada trimming outlier.** Desain awal membuang 2 hari terboros untuk meredam satu pembelian besar. Review menunjukkan itu justru membuang sewa, listrik, dan pupuk — pengeluaran terbesar dan paling nyata — sehingga runway jadi optimistis palsu (§13.1, M-03). Karena komitmen kini dimodelkan terpisah dan eksplisit, sumber distorsinya hilang di akar. Rumusnya jadi lebih jujur **dan** lebih pendek.
+
+**Cold start.** `seedDailySpend` diisi saat onboarding ("sehari kira-kira habis berapa?"). Bobotnya meluruh linear selama 14 hari sampai murni data asli. Selama `w < 1`, antarmuka menandai angkanya dengan label `perkiraan`. Ini menyelesaikan kontradiksi antara D2 (buang semua data) dan metrik yang butuh 28 hari data (§13.1, CS-01), **tanpa** membatalkan keputusan buang-data.
 
 **Bila `biayaHarianTotal == 0`** (belum ada belanja, tidak ada komitmen, seed nol): tampilkan `—`, bukan `Infinity`.
 
@@ -216,8 +266,12 @@ Penjagaan `N > 0` bukan hiasan: tanpanya, `mean([])` menghasilkan `NaN`, dan `0 
 Angka utama dashboard.
 
 ```
-rasioImpuls(periode) = Σ(out, intent='impulse', diskresioner) / Σ(out, diskresioner)
+periode     = [cycleStart, hariIni]                  // siklus berjalan, bukan bulan kalender
+rasioImpuls = Σ(out, intent='impulse', diskresioner, periode)
+            / Σ(out, diskresioner, periode)
 ```
+
+Periodenya adalah **siklus berjalan**, karena itulah rentang yang sama dengan jatah harian — memakai bulan kalender akan membuat dua angka di layar yang sama mengukur rentang waktu berbeda. Bila siklus baru berjalan kurang dari 3 hari, tampilkan pembilangnya apa adanya dengan keterangan `<n> hari data` dan sembunyikan persentasenya; rasio dari dua transaksi bukan informasi, itu derau.
 
 Dihitung **hanya atas belanja diskresioner**. Kalau pembayaran komitmen ikut penyebut, rasionya terlihat kecil secara palsu — sewa besar akan mengencerkan angka impuls dan menghilangkan sinyalnya.
 
@@ -226,6 +280,10 @@ Disajikan konkret, bukan sebagai persentase telanjang:
 > **Impuls bulan ini Rp 420.000** — setara **9 hari runway**
 
 Konversi ke hari (`nilaiImpuls / biayaHarianTotal`) adalah inti terapi perilakunya: mengubah angka abstrak jadi waktu hidup yang hilang.
+
+**Darurat mendapat perlakuan yang sama persis.** Ini penting dan sengaja. Niat `emergency` ditambahkan supaya pengeluaran yang benar-benar tak terhindarkan tidak mencemari rasio impuls (§13.1, UX-02) — tapi persis karena ia bebas dari beban rasa bersalah, ia jadi tempat pelarian yang nyaman untuk apa pun yang ingin dibenarkan. Kalau `IMPULSIF` berkonsekuensi dan `DARURAT` tidak, setiap pengeluaran yang canggung akan bermigrasi ke sana, dan metrik yang seluruh aplikasi ini dibangun untuk menghasilkannya jadi kosong.
+
+Karena itu belanja darurat disajikan dengan bingkai yang identik — *"Darurat bulan ini Rp 800.000 — setara 17 hari runway"* — dan bila belanja darurat melampaui **20% belanja diskresioner** dalam satu siklus, layar Sadar memunculkan satu pertanyaan tanpa menghakimi: *"Pengeluaran darurat siklus ini tinggi. Semuanya benar-benar darurat?"* Memaksa refleksi, tidak memblokir input.
 
 ### 4.7 Metrik pendukung
 
@@ -236,6 +294,12 @@ Konversi ke hari (`nilaiImpuls / biayaHarianTotal`) adalah inti terapi perilakun
 | Sebaran niat | `Σ amount per intent` | Sadar |
 | Seri sparkline | `belanjaHarian(d)` untuk 28 hari + garis `jatahHariIni` | Sadar |
 | Beban darurat | `Σ(intent='emergency', 90 hari) / 3` per bulan | Sadar |
+
+**Penjagaan data tipis.** Setiap metrik di atas wajib punya jalur "belum cukup data" dan tidak boleh pernah menampilkan `NaN`, `Infinity`, atau persentase yang dihitung dari penyebut nol:
+
+- Banding minggu disembunyikan bila `hariSejakMulai < 7`. Bila `rata4Minggu == 0`, tampilkan `belum cukup data`, bukan pembagian nol. Bila data kurang dari 4 minggu penuh, pakai minggu yang tersedia dan beri keterangan jumlah minggunya.
+- Rincian tag dan sebaran niat menampilkan keadaan kosong bila belum ada transaksi keluar.
+- Sparkline menggambar hari kosong sebagai nol, bukan melompatinya — celah pada grafik membohongi mata.
 
 ---
 
@@ -250,8 +314,8 @@ interface Transaction {
   kind: Kind
   amount: number               // rupiah bulat, > 0, selalu positif
   intent: Intent | null        // wajib bila kind==='out', selain itu null
-  tag: string | null
-  note: string | null
+  tag: string | null           // TEPAT SATU tag atau tidak sama sekali — bukan array
+  note: string | null          // maks 200 karakter, tersembunyi di balik "tambah catatan"
   walletId: string             // sumber untuk out/move, tujuan untuk in
   toWalletId: string | null    // wajib bila kind==='move', selain itu null
   commitmentId: string | null   // terisi bila out ini membayar komitmen
@@ -275,10 +339,22 @@ interface Commitment {
   id: string
   name: string
   amount: number
+  kind: 'bill' | 'saving'      // 'saving' dipenuhi dengan move ke dompet reserve
   dueDay: number               // 1..31, dijepit ke akhir bulan bila perlu
   walletId: string | null
   active: boolean
-  paidCycles: string[]         // ['2026-07', '2026-08']
+  // TIDAK ada paidCycles. Status lunas diturunkan dari transaksi (§4.3).
+}
+
+interface NotifSettings {
+  jatahTerlampaui: boolean     // saat sisaJatah < 0, foreground
+  belumMencatat: boolean       // 20:00 bila hari ini kosong
+  ringkasanHarian: boolean     // 21:00
+  rekapMingguan: boolean       // Minggu 20:00
+  jamHarian: number            // 0..23, default 21
+  jamBelumMencatat: number     // 0..23, default 20
+  hariRekap: number            // 0=Minggu, default 0
+  jamRekap: number             // 0..23, default 20
 }
 
 interface Settings {
@@ -305,9 +381,32 @@ Divalidasi di lapisan repository, bukan hanya di UI — UI bisa dilewati, reposi
 | `intent != null` ⟺ `kind === 'out'` | Tolak tulis |
 | `toWalletId != null` ⟺ `kind === 'move'` | Tolak tulis |
 | `walletId !== toWalletId` | Tolak tulis |
-| `commitmentId != null` ⟹ `kind === 'out'` | Tolak tulis |
+| `commitmentId != null` ⟹ `kind === 'out'`, atau `kind === 'move'` dengan tujuan dompet `reserve` | Tolak tulis |
+| **`at` tidak boleh melewati akhir hari ini** | Tolak tulis |
 | Dompet yang masih dirujuk transaksi aktif tidak boleh dihapus | Tolak, tawarkan arsip |
+| **Dompet `spendable` bersaldo bukan-nol tidak boleh diarsipkan** | Tolak, minta pindahkan dananya dulu |
+| `note` maksimal 200 karakter | Potong di UI, tolak di repository |
 | `dayKey` selalu turunan `at` + `dayStartHour` | Dihitung ulang saat tulis |
+
+**Kenapa tanggal masa depan dilarang.** `saldoDompet` (§4.1) tidak menyaring tanggal, sementara `terpakaiHariIni` (§4.4) hanya menjumlah `dayKey` hari ini. Transaksi bertanggal besok karena itu mengurangi saldo **tanpa** ikut dikembalikan oleh mekanisme penambahan-kembali, sehingga jatah hari ini menyusut diam-diam lalu dihitung sekali lagi besok. Melarang tanggal masa depan di lapisan repository mematikan seluruh kelas bug ini dengan satu aturan, jauh lebih murah daripada menambal rumusnya.
+
+**Kenapa arsip dompet bersaldo diblokir.** Ini justru cacat yang lahir dari aturan keamanan di baris sebelumnya: dompet yang masih dirujuk tidak boleh dihapus, dan penggantinya adalah arsip — padahal arsip mengeluarkan dompet itu dari `saldoBelanja`, sehingga jalur "aman" itulah yang justru melenyapkan uang dari basis jatah tanpa penjelasan. Mewajibkan dana dipindahkan lebih dulu membuat perubahan saldonya terlihat sebagai transaksi `move` yang nyata.
+
+### 5.1.1 Aturan penyuntingan
+
+§7.3 mengizinkan menyentuh entri untuk diedit. Yang boleh berubah dibatasi, karena tiap kolom punya konsekuensi ke rumus:
+
+| Kolom | Boleh diedit? | Alasan |
+|---|---|---|
+| `amount` | ya | Koreksi salah ketik, kasus paling umum |
+| `intent` | ya, hanya untuk `kind === 'out'` | Koreksi salah tap — ini yang membuat §7.1 aman |
+| `tag`, `note` | ya | Tanpa efek ke rumus |
+| `walletId`, `toWalletId` | ya | Divalidasi ulang terhadap aturan §5.1 |
+| `at` / `dayKey` | ya, tapi tidak boleh ke masa depan | Mengubah hari mana yang terbebani |
+| `kind` | **tidak** | Mengubah `out` jadi `in` membalik arah uang dan membatalkan seluruh aturan integritas sekaligus. Hapus lalu buat ulang. |
+| `commitmentId` | **tidak** | Status lunas diturunkan darinya (§4.3); hanya alur Bayar yang boleh menetapkannya |
+
+Setiap penyuntingan menjalankan ulang seluruh validasi §5.1 dan memperbarui `updatedAt`. Menyunting entri hari lampau mengubah jatah hari ini — itu benar secara aritmetika, dan wajib dijelaskan lewat banner (§4.4).
 
 Aturan terakhir penting: mengubah `dayStartHour` **wajib** memicu perhitungan ulang `dayKey` seluruh baris. Ini migrasi data, diperlakukan sebagai migrasi (§9.3).
 
@@ -315,12 +414,14 @@ Aturan terakhir penting: mengubah `dayStartHour` **wajib** memicu perhitungan ul
 
 ```js
 db.version(1).stores({
-  transactions: 'id, dayKey, kind, intent, walletId, commitmentId, deletedAt, at',
+  transactions: 'id, dayKey, kind, intent, walletId, toWalletId, commitmentId, deletedAt, at',
   wallets:      'id, order, archived',
   commitments:  'id, active, dueDay',
   settings:     'key'
 })
 ```
+
+`toWalletId` **wajib diindeks.** Rumus saldo (§4.1) memuat `Σ(move → w)`, yang berarti mencari transaksi dengan `toWalletId == w`. Tanpa indeks, setiap perhitungan saldo per dompet memindai seluruh tabel. Skalanya memang kecil, tapi saldo dihitung ulang di setiap render angka jangkar — ini jalur terpanas di aplikasi.
 
 Uang disimpan sebagai **rupiah bulat dalam `number`**. Rupiah tidak punya satuan pecahan dalam praktik sehari-hari, dan `Number.MAX_SAFE_INTEGER` ≈ 9 kuadriliun — tidak ada risiko presisi pada skala keuangan pribadi. Tidak perlu BigInt, tidak perlu desimal.
 
@@ -334,7 +435,8 @@ src/
     domain/            ← fungsi murni. TIDAK BOLEH mengimpor db/svelte/capacitor.
       money.ts           formatRupiah, parseRupiah
       day.ts             dayKeyOf, selisihHari, rentangHari
-      cycle.ts           cycleFor(tanggal, settings) → {start,end,key,panjang,sisaHari}
+      cycle.ts           cycleFor(tanggal, settings) → {start,end,panjang,sisaHari}
+      commitment.ts      jendelaKomitmen, sudahDibayar, komitmenBelumDibayar
       allowance.ts       hitungJatah(input) → {jatah, terpakai, sisa, status}
       runway.ts          hitungRunway(input) → {hari, perkiraan} | null
       insight.ts         rasioImpuls, rincianTag, bandingMinggu, seriSparkline
@@ -400,7 +502,7 @@ Batas ini bukan hiasan arsitektur. Ini satu-satunya alasan aplikasi keuangan bis
 
 **Gerakan inti: tombol niat adalah tombol simpan.** Ketik nominal → tap `IMPULSIF` → tersimpan. Niat menjadi wajib dengan **biaya nol tap tambahan**, dan tidak ada nilai default yang bisa diterima secara malas. Inilah yang membuat K1 (input cepat) dan K2 (niat wajib) tidak saling meniadakan.
 
-**Baris aksi bersifat dinamis** — ini menutup lubang yang ditemukan review (§13, UX-01):
+**Baris aksi bersifat dinamis** — ini menutup lubang yang ditemukan review (§13.1, UX-01):
 
 | Mode | Baris aksi |
 |---|---|
@@ -410,9 +512,25 @@ Batas ini bukan hiasan arsitektur. Ini satu-satunya alasan aplikasi keuangan bis
 
 Grid 2×2 dipilih ketimbang empat tombol sebaris: target sentuhnya jauh lebih besar, sehingga justru **menurunkan** angka salah-tap dibanding tiga tombol sempit di desain awal.
 
-**Undo.** Setiap simpan memunculkan snackbar 5 detik dengan tombol batal. Entri terakhir juga tetap tampil dan bisa disentuh untuk diedit. Ini menjawab keberatan bahwa simpan-instan mahal saat salah tap (§13, UX-03): koreksi butuh satu tap, bukan empat.
+**Undo.** Setiap simpan memunculkan snackbar 5 detik dengan tombol batal. Entri terakhir juga tetap tampil dan bisa disentuh untuk diedit. Ini menjawab keberatan bahwa simpan-instan mahal saat salah tap (§13.1, UX-03): koreksi butuh satu tap, bukan empat.
 
-**Chip tag** diambil dari 5 tag paling sering dipakai 30 hari terakhir untuk mode dan niat yang sedang aktif. Tag bersifat opsional dan tidak pernah menghalangi simpan.
+**Chip tag** diambil dari 5 tag paling sering dipakai 30 hari terakhir untuk mode yang sedang aktif. Chip bersifat **pilih-satu**, bukan menumpuk: menyentuh chip kedua menggantikan yang pertama. Satu transaksi punya tepat satu tag atau tidak sama sekali (§5). Ini menjaga `rincian tag` bebas dari ambiguitas hitung-ganda, dan menjaga input tetap satu ketukan. Tag opsional dan tidak pernah menghalangi simpan.
+
+**Catatan** disembunyikan di balik tautan kecil `+ catatan` di bawah baris tag. Ia tidak pernah tampil secara default, karena kolom teks bebas adalah musuh utama input cepat. Maksimal 200 karakter, bisa dicari lewat filter di Riwayat.
+
+#### Melawan pembiasaan
+
+Ancaman terbesar aplikasi ini bukan salah hitung, melainkan **mata yang berhenti melihat**. Angka statis di posisi tetap akan berubah jadi latar belakang dalam dua sampai tiga minggu, persis seperti jam dinding. Kalau itu terjadi, aplikasi ini kembali jadi pencatat — tepat yang ingin dihindari (§13.2, P-01).
+
+Tiga mekanisme wajib, bukan opsional:
+
+1. **Angkanya berubah wujud, bukan cuma berubah digit.** Perlakuan visual mengikuti persentase jatah yang terpakai: tenang (0–60%), waspada (60–90%), mendesak (90–100%), terlampaui (>100%). Yang berubah adalah warna, bobot huruf, dan latar — perubahan bentuk tertangkap mata jauh lebih lama daripada perubahan angka.
+
+2. **Intervensi di detik keputusan.** Begitu nominal yang sedang diketik akan melewati sisa jatah, area tombol niat menampilkan baris peringatan **sebelum** disimpan: *"Ini akan melewati jatah Rp 12.500."* Inilah satu-satunya mekanisme di aplikasi ini yang bekerja pada saat keputusan masih bisa dibatalkan — sisanya bekerja setelah uang keluar. Ia tidak memblokir; ia hanya membuat pilihannya sadar.
+
+3. **Konsekuensi masa depan dinyatakan, bukan disimpulkan sendiri.** Saat jatah terlampaui, tampilkan akibatnya secara langsung: *"Jatah besok turun jadi Rp 33.100."* Menyerahkan penarikan kesimpulan itu ke pemakai berarti tidak ada yang menariknya.
+
+**Batasan yang mengikat semua ini:** tidak ada nada menghakimi, tidak ada warna merah untuk niat, tidak ada streak atau lencana. Pemakai adalah pelabel sekaligus pihak yang dinilai — begitu sebuah label terasa menghukum, ia akan berhenti dipakai secara jujur, dan datanya mati (§13.2, P-02). Urutan tombol di grid 2×2 tidak boleh menyiratkan peringkat moral.
 
 ### 7.2 Sadar (dashboard)
 
@@ -423,13 +541,16 @@ Satu tap dari beranda. Berisi, berurutan dari paling menyadarkan:
 3. **Banding minggu** — *"Minggu ini 23% lebih boros dari rata-rata 4 minggu."*
 4. **Sebaran niat** — empat bar bertumpuk.
 5. **Rincian tag** — 8 teratas.
-6. **Komitmen** — daftar tagihan yang akan datang di siklus ini, dengan tombol Bayar.
+6. **Komitmen** — daftar tagihan dan target tabungan di siklus ini, dengan tombol Bayar dan penanda lunas.
+7. **Audit niat** — sekali per siklus, tampilkan 10 entri `RUTIN` bernilai terbesar dan tanyakan: *"Mana yang sebenarnya impulsif?"* Setiap baris bisa dipindahkan ke `IMPULSIF` dengan satu ketukan.
+
+Butir terakhir adalah satu-satunya pertahanan terhadap pembusukan data yang paling mungkin terjadi. Karena tombol niat merangkap tombol simpan, pemakai yang sedang buru-buru akan memilih label yang paling murah secara emosional, dan `RUTIN` adalah laci sampah yang sempurna: tanpa rasa bersalah, tanpa drama, tanpa kewajiban merencanakan. Tanpa audit, rasio impuls perlahan menuju nol sementara perilaku aslinya tidak berubah sama sekali (§13.2, P-02). Audit ini murah, dilakukan saat tidak terburu-buru, dan mengoreksi tepat pada arah bias yang diketahui.
 
 Semua grafik memakai SVG/CSS tanpa dependensi (D10). Library grafik dicoret setelah review menunjukkan CSS sudah cukup untuk semua bentuk visual di atas kecuali sparkline, dan sparkline itu 30 baris.
 
 ### 7.3 Riwayat
 
-Daftar dikelompokkan per hari dengan subtotal harian. Filter: rentang tanggal, niat, tag, dompet. Sentuh untuk edit, geser **tidak** menghapus (aturan warisan v1 yang benar: geser-untuk-hapus terlarang di aplikasi keuangan).
+Daftar dikelompokkan per hari dengan subtotal harian. Filter: rentang tanggal, niat, tag, dompet, dan isi catatan. Sentuh untuk edit sesuai aturan penyuntingan §5.1.1, geser **tidak** menghapus (aturan warisan v1 yang benar: geser-untuk-hapus terlarang di aplikasi keuangan).
 
 Tab **Trash** berisi entri terhapus dengan tombol pulihkan dan hapus permanen. Retensi tidak terbatas; tidak ada pembersihan otomatis — pembersihan otomatis di aplikasi keuangan adalah jalur kehilangan data.
 
@@ -437,13 +558,32 @@ Tab **Trash** berisi entri terhapus dengan tombol pulihkan dan hapus permanen. R
 
 Siklus (mode, tanggal jangkar, buffer akhir), dompet (tambah/arsip/urutkan, tandai reserve), komitmen, jam mulai hari, notifikasi (empat sakelar terpisah), ambang hapus besar, cadangan & ekspor/impor, versi aplikasi.
 
+**Setiap pengaturan yang menggeser angka jangkar wajib menampilkan akibatnya sebelum disimpan**, bukan sesudah:
+
+| Perubahan | Pratinjau yang wajib muncul |
+|---|---|
+| `endBuffer` | "Jatah harianmu akan turun dari Rp 60.000 ke Rp 30.000." |
+| Mode atau tanggal jangkar siklus | Tanggal akhir siklus baru + jatah harian barunya |
+| Menandai dompet jadi `reserve` | "Rp X keluar dari saldo belanja. Jatah turun ke Rp Y." |
+| Mengarsipkan dompet `spendable` | Ditolak bila saldonya bukan nol (§5.1); minta pindahkan dulu |
+| `dayStartHour` | Peringatan bahwa ini menghitung ulang seluruh `dayKey` (§9.3) |
+
+Pengaturan yang diam-diam membelah dua angka jangkar akan dibaca sebagai bug, dan kepercayaan pada angka itu tidak pulih setelahnya.
+
+**Sesuaikan saldo.** Seluruh matematika di dokumen ini berdiri di atas `saldoBelanja` yang benar, dan satu transaksi yang lupa dicatat membuat setiap angka melenceng diam-diam. Karena itu tiap dompet punya tindakan "sesuaikan saldo": pemakai memasukkan saldo sebenarnya, aplikasi membuat **transaksi koreksi yang terlihat** sebesar selisihnya (`in` atau `out`, `intent = 'routine'`, tag `#koreksi`).
+
+Aplikasi tidak pernah menimpa saldo secara diam-diam. Menulis ulang angka tanpa jejak akan merusak seluruh riwayat yang jadi dasar runway dan rata-rata harian — dan menyembunyikan dari pemakai bahwa ada uang yang tak terlacak, yaitu justru informasi yang paling perlu ia sadari.
+
 ### 7.5 Mulai (onboarding)
 
 Tiga pertanyaan, satu layar per pertanyaan, semua bisa diubah nanti di Atur:
 
 1. **"Uangmu sekarang berapa?"** → membuat dompet `CASH` dengan `initialBalance`
 2. **"Sehari kira-kira habis berapa?"** → `seedDailySpend`
-3. **"Gajian tanggal berapa?"** → `cycleMode` + `cycleAnchorDay`, dengan pilihan "tidak tentu" → mode `rolling`
+3. **"Gajian tanggal berapa?"** — tiga jalur, karena penghasilan tidak selalu punya bentuk yang sama:
+   - Tanggal tetap tiap bulan → `monthly-day` + `cycleAnchorDay`
+   - "Aku tahu tanggal masuk berikutnya, tapi tidak tetap" → `manual` + `cycleManualEnd`
+   - "Tidak tentu" → `rolling`
 
 Lalu satu layar keempat yang meminta izin notifikasi dan menawarkan tautan langsung ke pengaturan optimasi baterai (§8.5).
 
@@ -485,7 +625,7 @@ interface Notifier {
 }
 ```
 
-Dua implementasi: `capacitor.ts` (asli) dan `mock.ts` (browser dan uji, mencatat ke konsol). Dengan begitu **seluruh logika penjadwalan tetap bisa dikembangkan dan diuji di browser Termux** — hanya pengirimannya yang butuh build device. Ini mitigasi langsung terhadap kelemahan stack yang ditemukan review (§13, P-03).
+Dua implementasi: `capacitor.ts` (asli) dan `mock.ts` (browser dan uji, mencatat ke konsol). Dengan begitu **seluruh logika penjadwalan tetap bisa dikembangkan dan diuji di browser Termux** — hanya pengirimannya yang butuh build device. Ini mitigasi langsung terhadap kelemahan stack yang ditemukan review (§13.1, P-03).
 
 ### 8.4 Notifikasi bukan sumber kebenaran
 
@@ -516,7 +656,24 @@ IndexedDB di dalam WebView Capacitor bersifat privat-aplikasi dan jauh lebih tah
 4. **Salinan mingguan** ke `Directory.Documents/MalasFinance/` supaya terlihat pemakai dan bisa disalin keluar. Bersifat *best-effort* — tunduk pada scoped storage Android.
 5. Layar Atur menampilkan **kapan cadangan terakhir berhasil**. Bila lebih dari 3 hari, tampilkan peringatan.
 
-Cadangan otomatis masuk **Fase 1**, bukan fase akhir. Meluncurkan input data sebelum ada cadangan adalah kesalahan urutan yang ditemukan review (§13, S-01).
+**Format berkas cadangan.** Amplopnya wajib membawa versi skemanya sendiri. Tanpa penanda versi di dalam berkas, impor lintas-versi mustahil dilakukan dengan aman — kode impor tidak punya cara untuk tahu bentuk apa yang sedang ia baca, bahkan tidak tahu bahwa ia perlu memberi nilai bawaan.
+
+```json
+{
+  "format": "malasfinance-backup",
+  "schemaVersion": 1,
+  "appVersion": "2.0.0",
+  "exportedAt": 1785000000000,
+  "settings":    { },
+  "wallets":     [ ],
+  "commitments": [ ],
+  "transactions":[ ]
+}
+```
+
+Impor membaca `schemaVersion` lebih dulu, menjalankan migrasi maju bila perlu, baru menulis. `schemaVersion` lebih besar dari yang dikenal aplikasi → tolak dengan pesan jelas ("cadangan ini dari versi aplikasi yang lebih baru"), **jangan** coba dibaca sebagian. Transaksi terhapus ikut disertakan lengkap dengan `deletedAt`-nya, karena ini cadangan penuh, bukan ekspor laporan.
+
+Cadangan otomatis masuk **Fase 1**, bukan fase akhir. Meluncurkan input data sebelum ada cadangan adalah kesalahan urutan yang ditemukan review (§13.1, S-01).
 
 ### 9.2 Impor selalu pratinjau dulu
 
@@ -563,14 +720,27 @@ Daftar kasus yang **wajib** ada, karena masing-masing mewakili cara aplikasi ini
 - Pergantian tahun
 
 **`allowance.ts`**
-- Belanja hari ini tidak dihitung dua kali: `jatahHariIni` stabil sepanjang hari
+- Belanja hari ini tidak dihitung dua kali: `jatahHariIni` stabil terhadap pengeluaran diskresioner
+- Pemasukan di tengah hari **menaikkan** `jatahHariIni` seketika (perilaku yang disengaja, dikunci lewat tes)
 - Boros hari ini → `jatahHariIni` besok turun
 - Komitmen belum dibayar mengurangi jatah sejak hari pertama siklus
 - Komitmen dibayar di tengah siklus tidak menimbulkan lonjakan maupun tebing
+- Komitmen `saving` dibayar lewat `move` ke `reserve` **tidak** mengubah jatah
 - `danaTersedia ≤ 0` → jatah 0 dan status `minus`, bukan angka negatif
 - `endBuffer` lebih besar dari saldo
 - Dompet `reserve` tidak ikut `saldoBelanja`
 - Nol dompet spendable
+- Transaksi bertanggal masa depan ditolak (§5.1) sehingga tidak pernah mencapai rumus ini
+
+**`commitment.ts`**
+- Komitmen lewat jatuh tempo tapi belum dibayar **tetap** terhitung — lupa bayar tidak boleh menaikkan jatah
+- Membayar komitmen membuatnya lunas; menghapus pembayaran ke trash membuatnya **kembali** belum lunas
+- Memulihkan pembayaran dari trash membuatnya lunas lagi
+- Tombol Bayar idempoten: komitmen yang sudah lunas tidak bisa dibayar dua kali
+- Jendela `[awalBulanIni, cycleEnd]` berperilaku benar di ketiga mode siklus, termasuk `rolling`
+- `dueDay = 31` di bulan pendek dijepit ke hari terakhir
+- Komitmen dibuat di tengah siklus langsung terhitung bila jatuh temponya masih di jendela
+- `amount` melebihi saldo → kondisi minus, bukan error
 
 **`runway.ts`**
 - Nol hari data → seed murni, ditandai `perkiraan`, dan hasilnya **bukan `NaN`**
@@ -578,9 +748,11 @@ Daftar kasus yang **wajib** ada, karena masing-masing mewakili cara aplikasi ini
 - Hari ke-14 dan ke-15 → seed berbobot nol
 - Nol belanja dan nol komitmen → `null`, bukan `Infinity`
 - Hari tanpa belanja dihitung sebagai 0, bukan dilewati
+- **Hari ini tidak masuk jendela rata-rata** — runway tidak berubah saat transaksi hari ini disimpan
 - Pembayaran komitmen tidak mencemari rata-rata diskresioner
 
 **`day.ts`**
+- `selisihHari(x, x) === 0` — dikunci lewat tes karena setiap rumus siklus bergantung padanya
 - `dayStartHour = 3`: transaksi pukul 01:30 masuk `dayKey` kemarin
 - Pergantian bulan dan tahun
 - Konsistensi saat perangkat berpindah zona waktu
@@ -588,15 +760,18 @@ Daftar kasus yang **wajib** ada, karena masing-masing mewakili cara aplikasi ini
 **`insight.ts`**
 - Rasio impuls dengan penyebut nol
 - Rasio impuls mengecualikan pembayaran komitmen dari penyebut
+- Rasio impuls memakai rentang siklus berjalan, bukan bulan kalender
 - Banding minggu saat data kurang dari 4 minggu
+- Banding minggu saat `rata4Minggu == 0` → "belum cukup data", bukan pembagian nol
+- Tidak ada satu pun metrik yang bisa mengembalikan `NaN` atau `Infinity` untuk basis data kosong
 
 ### 10.2 Repository (`fake-indexeddb`)
 
-Setiap aturan integritas di §5.1 punya satu tes yang membuktikan penulisan ditolak. Ditambah: siklus soft-delete/pulihkan, penghapusan dompet yang masih dirujuk, dan idempotensi penandaan komitmen lunas.
+Setiap aturan integritas di §5.1 punya satu tes yang membuktikan penulisan ditolak — termasuk penolakan tanggal masa depan dan penolakan mengarsipkan dompet `spendable` bersaldo. Ditambah: siklus soft-delete/pulihkan, penghapusan dompet yang masih dirujuk, setiap aturan penyuntingan §5.1.1 (khususnya `kind` dan `commitmentId` yang tidak boleh berubah), dan idempotensi tombol Bayar.
 
 ### 10.3 Cadangan dan impor
 
-Bolak-balik serialisasi, JSON rusak, berkas kosong, `id` duplikat, dompet tak dikenal, angka pratinjau cocok dengan hasil impor.
+Bolak-balik serialisasi, JSON rusak, berkas kosong, `id` duplikat, dompet tak dikenal, angka pratinjau cocok dengan hasil impor. Ditambah: berkas tanpa `schemaVersion` ditolak, `schemaVersion` lebih tinggi dari yang dikenal ditolak dengan pesan jelas, dan transaksi terhapus ikut terbawa lengkap dengan `deletedAt`-nya.
 
 ### 10.4 Yang tidak diuji
 
@@ -639,8 +814,8 @@ Halangan nyata yang perlu diakali sekali di awal:
 
 | Fase | Isi | Selesai bila |
 |---|---|---|
-| **1 — Fondasi** | Model data, Dexie, repository + aturan integritas, `domain/` lengkap dengan tesnya, onboarding, layar Catat, angka jangkar, komitmen, trash, **cadangan otomatis** | Bisa mencatat sehari penuh dan angkanya benar; data selamat dari uninstall-reinstall lewat cadangan |
-| **2 — Sadar** | Dashboard, sparkline SVG, rasio impuls, rincian tag, banding minggu, layar Riwayat dengan filter | Semua metrik §4.7 tampil dan cocok dengan hitungan manual |
+| **1 — Fondasi** | Model data, Dexie, repository + aturan integritas (§5.1, §5.1.1), `domain/` lengkap dengan tesnya, onboarding, layar Catat, angka jangkar, mekanisme anti-pembiasaan (§7.1), komitmen `bill` + `saving`, sesuaikan saldo, trash, **cadangan otomatis** | Bisa mencatat sehari penuh dan angkanya benar; data selamat dari uninstall-reinstall lewat cadangan |
+| **2 — Sadar** | Dashboard, sparkline SVG, rasio impuls, rincian tag, banding minggu, audit niat, layar Riwayat dengan filter | Semua metrik §4.7 tampil dan cocok dengan hitungan manual |
 | **3 — Suara** | `Notifier`, penjadwalan, penjadwalan ulang saat tulis, banner dalam aplikasi, permintaan pengecualian baterai | Empat notifikasi terkirim di perangkat nyata; mematikan notifikasi tidak merusak apa pun |
 | **4 — Rilis** | Ekspor/impor lengkap dengan pratinjau, ekspor Markdown, pipeline APK, GitHub Secrets | APK bertanda tangan terbit dari CI; impor bolak-balik menghasilkan data identik |
 
@@ -650,7 +825,11 @@ Cadangan otomatis sengaja diletakkan di Fase 1, bukan Fase 4.
 
 ## 13. Review Adversarial dan Penyelesaiannya
 
-Desain ini melewati review adversarial (`gemini-3.6-flash-high`) sebelum dibekukan. Tiga belas temuan; dua belas diterima seluruhnya atau sebagian, satu ditolak.
+Desain ini melewati **dua ronde** review adversarial dengan model berbeda sebelum dibekukan. Ronde 1 menyerang desain awal; ronde 2 menyerang dokumen hasil revisinya dan dilarang mengulang temuan ronde 1.
+
+### 13.1 Ronde 1 — `gemini-3.6-flash-high`
+
+Tiga belas temuan; dua belas diterima seluruhnya atau sebagian, satu ditolak.
 
 | ID | Temuan | Penyelesaian |
 |---|---|---|
@@ -667,6 +846,41 @@ Desain ini melewati review adversarial (`gemini-3.6-flash-high`) sebelum dibekuk
 | **S-01** | Cadangan diletakkan di Fase 4 sementara input diluncurkan di Fase 1 | Cadangan otomatis dipindah ke Fase 1 (§9.1, §12) |
 | **YAGNI** | Library grafik uPlot berlebihan | **Diterima** — dicoret; SVG/CSS manual (§7.2, D10) |
 | **YAGNI** | Multi-dompet dengan `move` disebut "kerumitan skema tanpa manfaat" | **Ditolak.** `move` diperlukan agar saldo per dompet benar, dan pemisahan dompet `reserve` justru yang membuat `saldoBelanja` tidak menghitung tabungan. Tanpanya angka jangkar rusak. |
+
+### 13.2 Ronde 2 — `claude-opus-4-6-thinking`
+
+Dua puluh empat temuan, nol pengulangan dari ronde 1. Semuanya diterima; tiga di antaranya diselesaikan dengan cara **berbeda dan lebih kuat** daripada yang diusulkan.
+
+> Penomoran kedua ronde berdiri sendiri dan **bertabrakan**: `P-01` di §13.1 berarti penggusuran IndexedDB, sementara `P-01` di §13.2 berarti pembiasaan. Setiap rujukan di dokumen ini karena itu selalu menyebut nomor ronde-nya.
+
+**Satu perubahan struktural mematikan tiga temuan sekaligus.** C-01 (tulis-ganda tanpa atomisitas), H-01 (tidak ada sinkronisasi balik saat pembayaran dihapus), dan H-10 (`cycleKey` mustahil didefinisikan untuk mode `manual` dan `rolling`) semuanya berakar pada satu keputusan: menyimpan status lunas di `paidCycles`. Menurunkannya dari transaksi (§4.3) menghapus ketiganya sekaligus, dan menghasilkan kode yang lebih sedikit — bukan lebih banyak.
+
+| ID | Tingkat | Temuan | Penyelesaian |
+|---|---|---|---|
+| **C-01** | Kritis | Tombol Bayar menulis ke dua tabel tanpa atomisitas; gagal di tengah → komitmen dipotong dua kali | `paidCycles` dihapus; status lunas diturunkan dari transaksi (§4.3). Satu penulisan, tidak ada jendela rusak. |
+| **H-01** | Kritis | Menghapus pembayaran ke trash tidak mengembalikan status belum-lunas | Hilang dengan sendirinya oleh perubahan yang sama — `sudahDibayar` adalah query atas transaksi aktif (§4.3) |
+| **H-10** | Tinggi | `cycleKey` dipakai tapi tidak pernah didefinisikan; mustahil untuk `manual` dan `rolling` | Tidak ada lagi `cycleKey`. Jendela komitmen jadi satu aturan tunggal `[awalBulanIni, cycleEnd]` (§4.3) |
+| **H-02** | Tinggi | Tagihan lewat jatuh tempo yang belum dibayar hilang dari hitungan — lupa bayar justru **menaikkan** jatah | Batas bawah jendela diubah dari `hariIni` ke `awalBulanIni` (§4.3) |
+| **C-02** | Tinggi | Klaim "jatah stabil sepanjang hari" keliru — pemasukan di tengah hari mengubahnya | Klaim dikoreksi jadi "stabil terhadap pengeluaran diskresioner", dengan tabel eksplisit kejadian mana yang mengubah jatah dan mana yang tidak (§4.4) |
+| **C-03** | Tinggi | Pindah ke `reserve` menurunkan jatah — aplikasi menghukum menabung | **Cara berbeda:** menabung dimodelkan sebagai komitmen `kind: 'saving'` sehingga terpotong di muka. Memindahkan uang jadi tidak mengubah jatah sama sekali. Nol konsep baru. (§4.3) |
+| **C-04** | Tinggi | Mengedit riwayat lama menggeser jatah hari ini tanpa penjelasan | Banner sekali-lewat di layar Catat (§4.4) |
+| **C-05** | Sedang | Transaksi bertanggal masa depan menggerus jatah tanpa dikembalikan | Tanggal masa depan ditolak di lapisan repository — satu aturan mematikan seluruh kelas bug (§5.1) |
+| **C-06** | Sedang | Mengarsipkan dompet menurunkan jatah diam-diam | **Cara berbeda:** bukan sekadar dialog peringatan — mengarsipkan dompet `spendable` bersaldo **ditolak**, dananya harus dipindahkan dulu (§5.1) |
+| **C-07** | Sedang | Mengubah `endBuffer` menurunkan jatah diam-diam | Pratinjau wajib sebelum simpan, untuk semua pengaturan yang menggeser jatah (§7.4) |
+| **P-01** | Tinggi | Angka statis jadi hiasan dinding dalam ~3 minggu | Tiga mekanisme anti-pembiasaan, termasuk intervensi di detik keputusan sebelum uang keluar (§7.1) |
+| **P-02** | Sedang | Niat wajib mendorong pelabelan tidak jujur ke arah `RUTIN` | Audit niat sekali per siklus + larangan nada menghakimi pada label (§7.1, §7.2) |
+| **P-03** | Sedang | `DARURAT` jadi pintu keluar bebas rasa bersalah | Bingkai "setara X hari runway" yang sama persis + pertanyaan refleksi bila darurat > 20% (§4.6) |
+| **U-01** | Tinggi | `selisihHari` dipakai di mana-mana tapi tidak pernah didefinisikan | Didefinisikan formal, dengan konsekuensinya dijabarkan dan dikunci lewat tes (§4.1, §10.1) |
+| **U-02** | Sedang | "N hari terakhir" ambigu — termasuk hari ini atau tidak? | Hari ini dikeluarkan secara eksplisit; alasannya dijelaskan (§4.5) |
+| **U-03** | Sedang | Tipe `NotifSettings` menggantung | Didefinisikan (§5) |
+| **U-04** | Sedang | Model data bilang satu tag, wireframe menyiratkan banyak | Diputuskan tepat satu; chip jadi pilih-satu (§5, §7.1) |
+| **U-05** | Sedang | Aturan penyuntingan transaksi tidak ada sama sekali | Subbagian §5.1.1 ditambahkan |
+| **U-06** | Rendah | Kolom `note` ada di model tapi tidak ada di UI | Dispesifikasikan: tersembunyi di balik tautan, maks 200 karakter, bisa dicari (§7.1) |
+| **U-07** | Sedang | Berkas cadangan tanpa versi skema → impor lintas-versi mustahil | Amplop cadangan berversi didefinisikan (§9.1) |
+| **U-08** | Sedang | `toWalletId` tidak diindeks padahal dipakai tiap hitung saldo | Ditambahkan ke indeks Dexie (§5.2) |
+| **U-09** | Rendah | Periode `rasioImpuls` tidak pernah ditentukan | Siklus berjalan, dengan penjagaan data tipis (§4.6) |
+| **U-10** | Rendah | Banding minggu bisa membagi nol | Penjagaan data tipis untuk semua metrik (§4.7) |
+| **U-11** | Rendah | Onboarding tidak punya jalan ke mode `manual` | Pertanyaan ketiga jadi tiga jalur (§7.5) |
 
 ---
 
@@ -691,6 +905,9 @@ Dicatat supaya tidak jadi kejutan, bukan supaya diperdebatkan lagi.
 | Termux dibunuh phantom process killer | Dev sesekali terputus | Bisa diakali (§11.2) |
 | Ketahanan IndexedDB tak sepenuhnya pasti | Kehilangan data | Dimitigasi berlapis (§9.1), tidak dihilangkan |
 | Empat niat terasa terlalu banyak saat dipakai | Input melambat | Pantau; taksonomi bisa diciutkan tanpa migrasi karena `intent` cuma string |
+| **Pembiasaan: angka jangkar berhenti dilihat** | Aplikasi diam-diam kembali jadi pencatat — kegagalan total terhadap K1 | Dimitigasi (§7.1) tapi **tidak** dihilangkan. Ini risiko eksistensial aplikasi ini, bukan risiko teknis. Bila setelah dua bulan pemakaian rasio impuls tidak bergerak sama sekali, mekanisme anti-pembiasaannya yang gagal, bukan pemakainya. |
+| **Pelabelan tidak jujur ke arah `RUTIN`** | Rasio impuls menuju nol sementara perilaku tidak berubah | Audit niat per siklus (§7.2) mengoreksi tepat pada arah biasnya, tapi bergantung pada kejujuran saat tidak terburu-buru |
+| Seluruh matematika bergantung pada `saldoBelanja` yang benar | Satu dompet lupa dicatat → semua angka salah | Tidak ada rekonsiliasi bank otomatis. Layar Atur perlu jalur "sesuaikan saldo" yang membuat transaksi koreksi eksplisit, bukan menulis ulang saldo diam-diam. |
 
 ---
 
