@@ -1,309 +1,309 @@
 # MalasFinance v2 — "Sadar"
 
-> Spesifikasi penulisan ulang total. Dokumen ini menggantikan `PLAN.md` dan `next-spec.md`, yang keduanya menggambarkan aplikasi lama dan sudah tidak berlaku.
+> Total rewrite specification. This document replaces `PLAN.md` and `next-spec.md`, both of which describe the old application and are no longer valid.
 
-**Status:** disetujui untuk masuk tahap perencanaan implementasi
-**Tanggal:** 2026-07-28
-**Menggantikan:** MalasFinance v1.5.2 (Kotlin/Compose/Room, ~2.150 baris)
-
----
-
-## 0. Ringkasan Satu Paragraf
-
-MalasFinance v2 adalah aplikasi keuangan pribadi yang tugasnya **bukan mencatat uang, melainkan membuat pemakainya sadar sebelum uang itu keluar**. Aplikasi lama adalah pencatat: ia menjawab "aku sudah habis berapa?". Aplikasi baru menjawab "**hari ini aku masih boleh habis berapa, dan kenapa uangku bocor?**". Perbedaannya bukan fitur, melainkan poros: satu angka jangkar yang selalu terlihat di atas form input, satu niat wajib di setiap pengeluaran, dan aplikasi yang berbicara duluan lewat notifikasi. Ditulis ulang dari nol dengan Svelte + Vite + Capacitor supaya siklus pengembangan bisa berjalan langsung di Termux tanpa menunggu CI lima menit.
+**Status:** approved to enter implementation planning stage
+**Date:** 2026-07-28
+**Replaces:** MalasFinance v1.5.2 (Kotlin/Compose/Room, ~2,150 lines)
 
 ---
 
-## 1. Kenapa Ditulis Ulang
+## 0. One-Paragraph Summary
 
-Aplikasi lama tidak rusak. Ia bekerja, datanya aman, rilisnya rapi. Yang salah adalah **porosnya**.
+MalasFinance v2 is a personal finance app whose job is **not to track money, but to make users conscious before money leaves**. The old app was a tracker: it answered "how much have I spent?". The new app answers "**how much am I still allowed to spend today, and why is my money leaking?**". The difference is not a feature, but a pivot: one anchor number that is always visible above the input form, one mandatory intent on every expense, and an app that speaks first via notifications. Rewritten from scratch with Svelte + Vite + Capacitor so that the development cycle can run directly in Termux without waiting five minutes for CI.
 
-| Aspek | v1 (pencatat) | v2 (penyadar) |
+---
+
+## 1. Why Rewritten
+
+The old app is not broken. It works, its data is safe, its releases are clean. What is wrong is its **pivot**.
+
+| Aspect | v1 (tracker) | v2 (awareness generator) |
 |---|---|---|
-| Pertanyaan yang dijawab | "Sudah habis berapa?" | "Masih boleh habis berapa?" |
-| Angka utama | Saldo | Sisa jatah hari ini |
-| Kategori | CORE/OPER/HOBBY/VAULT — *untuk apa* | Terencana/Rutin/Impulsif/Darurat — *kenapa* |
-| Kapan bicara | Saat dibuka | Duluan, lewat notifikasi |
-| Siklus dev | Push → tunggu CI ~5 menit | `npm run dev` → refresh, instan |
-| Grafik | Harus digambar manual di Canvas | SVG/CSS, hampir gratis |
+| Question answered | "How much have I spent?" | "How much am I still allowed to spend?" |
+| Main number | Balance | Remaining allowance today |
+| Category | CORE/OPER/HOBBY/VAULT — *what for* | Terencana/Rutin/Impulsif/Darurat — *why* |
+| When it speaks | When opened | First, via notifications |
+| Dev cycle | Push → wait for CI ~5 minutes | `npm run dev` → refresh, instant |
+| Charts | Must be drawn manually on Canvas | SVG/CSS, almost free |
 
-Menambal v1 untuk mencapai v2 berarti mengganti model data, taksonomi, layar utama, dan seluruh lapisan insight — yaitu semuanya kecuali pipeline rilis. Menulis ulang lebih murah daripada bermigrasi.
+Patching v1 to reach v2 means replacing the data model, taxonomy, main screen, and the entire insight layer — which is everything except the release pipeline. Rewriting is cheaper than migrating.
 
-### 1.1 Yang dibawa dari v1 (karena memang benar)
+### 1.1 Carried over from v1 (because it's actually right)
 
-- Aturan keamanan data dari `AGENTS.md`: soft-delete ke trash, konfirmasi ketik untuk hapus besar, tanpa migrasi destruktif diam-diam, impor selalu preview dulu.
-- Konvensi rilis: tag `v<versi>-b<build>`, APK bernama unik `MalasFinance-v<versi>-b<build>.apk`.
-- Prinsip "input harus cepat" — di v2 justru diperkuat, bukan dikorbankan.
-- Utang yang belum lunas dari `next-spec.md` ITEM-4: keystore dan password **wajib** pindah ke GitHub Secrets, tidak boleh ikut ke repo v2.
+- Data security rules from `AGENTS.md`: soft-delete to trash, typed confirmation for large deletions, no silent destructive migrations, import always previews first.
+- Release convention: tag `v<version>-b<build>`, uniquely named APK `MalasFinance-v<version>-b<build>.apk`.
+- The "input must be fast" principle — in v2 it is actually strengthened, not sacrificed.
+- Outstanding technical debt from `next-spec.md` ITEM-4: keystore and password **must** move to GitHub Secrets, not allowed into the v2 repo.
 
-### 1.2 Yang dibuang
+### 1.2 What is discarded
 
-Seluruh basis kode Kotlin, seluruh skema Room, dan **seluruh data historis**. Aplikasi baru mulai kosong. Konsekuensi cold-start ditangani lewat onboarding berbasis seed (§4.5), bukan lewat impor.
-
----
-
-## 2. Filosofi: Tiga Komitmen yang Mengikat
-
-Setiap keputusan desain di dokumen ini harus bisa dilacak ke salah satu dari tiga komitmen ini. Kalau sebuah fitur tidak melayani salah satunya, fitur itu tidak masuk.
-
-### K1 — Angka jangkar selalu terlihat
-
-Sisa jatah hari ini berada **di atas form input**, bukan di dashboard terpisah. Kesadaran yang butuh satu tap untuk dilihat adalah kesadaran yang tidak akan dilihat. Angka itu ada di detik saat keputusan belanja diambil.
-
-### K2 — Setiap pengeluaran punya niat
-
-Bukan "untuk apa" (itu tag, opsional), tapi "**kenapa**". Terencana, Rutin, Impulsif, atau Darurat. Wajib, tanpa nilai default yang bisa diterima secara malas. Ini satu-satunya data yang tidak bisa didapat dari mutasi rekening bank, dan satu-satunya yang benar-benar mengubah perilaku.
-
-### K3 — Aplikasi bicara duluan
-
-Aplikasi yang menunggu dibuka hanya melayani orang yang sudah sadar. Notifikasi ambang, pengingat, dan rekap mingguan adalah mekanisme utama, bukan pelengkap. **Tetapi** notifikasi adalah dorongan, bukan sumber kebenaran — setiap notifikasi wajib punya padanan di dalam aplikasi (§8.4).
+The entire Kotlin codebase, the entire Room schema, and **all historical data**. The new app starts clean. Cold-start consequences are handled via seed-based onboarding (§4.5), not via import.
 
 ---
 
-## 3. Keputusan yang Sudah Terkunci
+## 2. Philosophy: Three Binding Commitments
 
-Diambil lewat wawancara berjenjang, lalu diuji lewat review adversarial (§13).
+Every design decision in this document must be traceable to one of these three commitments. If a feature does not serve one of them, that feature does not make the cut.
 
-| # | Keputusan | Pilihan | Alasan |
+### K1 — Anchor number always visible
+
+Today's remaining allowance is located **above the input form**, not in a separate dashboard. Awareness that requires one tap to view is awareness that will not be viewed. That number is there the second the spending decision is made.
+
+### K2 — Every expense has an intent
+
+Not "what for" (that is tags, optional), but "**why**". Terencana, Rutin, Impulsif, or Darurat. Mandatory, without a default value that can be lazily accepted. This is the only data that cannot be obtained from bank statements, and the only one that truly changes behavior.
+
+### K3 — The app speaks first
+
+An app that waits to be opened only serves people who are already aware. Threshold notifications, reminders, and weekly summaries are the primary mechanisms, not add-ons. **However**, notifications are a push, not a single source of truth — every notification must have an equivalent inside the app (§8.4).
+
+---
+
+## 3. Locked-In Decisions
+
+Made through tiered interviews, then stress-tested via adversarial review (§13).
+
+| # | Decision | Choice | Rationale |
 |---|---|---|---|
-| D1 | Filosofi | Kesadaran / perubahan perilaku | Mencatat sudah bisa; yang belum, berubah |
-| D2 | Data lama | Dibuang total | Taksonomi baru tidak kompatibel; riwayat lama akan mengotori insight |
-| D3 | Stack | Svelte + Vite + Capacitor | Paling sedikit kode, dev loop instan di Termux, tetap dapat APK |
-| D4 | Tata letak | Input dulu, insight sekali sentuh | Kalau input lambat, tidak ada data untuk disadari |
-| D5 | Angka jangkar | Jatah harian, runway lapis kedua | Jatah = actionable, runway = konteks |
-| D6 | Taksonomi | Niat: Terencana/Rutin/Impulsif/**Darurat** | Darurat ditambah setelah review (§13.1, UX-02) |
-| D7 | Notifikasi | Mode aktif | Sesuai K3 |
-| D8 | Dompet | Multi-dompet, tanpa jenis transaksi transfer khusus | Saldo akurat tanpa kerumitan biaya admin |
-| D9 | Cold start | Seed lewat onboarding 3 pertanyaan | Menyelesaikan kontradiksi D2 tanpa membatalkannya |
-| D10 | Grafik | SVG/CSS manual, tanpa library | uPlot dibuang setelah review (§13) |
+| D1 | Philosophy | Awareness / behavior change | Tracking is already solved; what isn't is changing behavior |
+| D2 | Old data | Completely discarded | New taxonomy is incompatible; old history would pollute insights |
+| D3 | Stack | Svelte + Vite + Capacitor | Least amount of code, instant dev loop in Termux, still gets APK |
+| D4 | Layout | Input first, insights one tap away | If input is slow, there is no data to be aware of |
+| D5 | Anchor number | Daily allowance, runway as second layer | Allowance = actionable, runway = context |
+| D6 | Taxonomy | Intent: Terencana/Rutin/Impulsif/**Darurat** | Darurat added after review (§13.1, UX-02) |
+| D7 | Notifications | Active mode | Per K3 |
+| D8 | Wallets | Multi-wallet, no dedicated transfer transaction type | Accurate balance without admin fee complexity |
+| D9 | Cold start | Seed via 3-question onboarding | Resolves D2 contradiction without rescinding it |
+| D10 | Charts | Manual SVG/CSS, no library | uPlot dropped after review (§13) |
 
 ---
 
-## 4. Model Domain dan Matematika
+## 4. Domain Model and Mathematics
 
-Ini bagian terpenting dari dokumen. Seluruh nilai aplikasi bergantung pada satu angka; kalau angka itu berbohong sekali saja, pemakainya berhenti percaya dan aplikasinya mati.
+This is the most important part of the document. The entire value of the application relies on a single number; if that number lies even once, the user stops trusting it and the app dies.
 
-### 4.1 Definisi dasar
+### 4.1 Basic definitions
 
-**Hari.** Satu hari kalender lokal yang dimulai pada `dayStartHour` (default `0`, boleh `0..6`). Pengaturan ini ada karena mencatat jajan pukul 00.30 seharusnya masuk hitungan "tadi malam", bukan "hari ini". Semua tanggal direpresentasikan sebagai string `YYYY-MM-DD` (`dayKey`), bukan aritmetika milidetik — ini menghilangkan seluruh kelas bug zona waktu dan DST.
+**Day.** A local calendar day starting at `dayStartHour` (default `0`, allowed `0..6`). This setting exists because recording a snack at 00:30 should count as "last night", not "today". All dates are represented as `YYYY-MM-DD` strings (`dayKey`), not millisecond arithmetic — this eliminates an entire class of timezone and DST bugs.
 
 ```
 dayKeyOf(at, dayStartHour) = format(new Date(at - dayStartHour * 3_600_000), 'YYYY-MM-DD')
 ```
 
-`dayKey` **disimpan di baris transaksi** dan diindeks. Query harian jadi lookup indeks, bukan pemindaian dengan konversi tanggal.
+`dayKey` is **stored in transaction rows** and indexed. Daily queries become index lookups, not scans with date conversion.
 
-**Selisih hari.** Didefinisikan eksplisit karena seluruh matematika siklus dan cold-start bergantung padanya, dan salah tafsir satu angka di sini menggeser setiap hitungan di dokumen ini:
+**Days between.** Explicitly defined because all cycle and cold-start mathematics depend on it, and misinterpreting a single number here shifts every calculation in this document:
 
 ```
-selisihHari(a, b) = floor((tanggalDari(a) − tanggalDari(b)) / 86_400_000)
+daysBetween(a, b) = floor((dateFrom(a) − dateFrom(b)) / 86_400_000)
 ```
 
-Kedua argumen berupa string `dayKey`, jadi `dayStartHour` sudah terserap di dalamnya dan tidak boleh diterapkan dua kali. **`selisihHari(x, x) === 0`.** Konsekuensinya mengikat: `sisaHari` di hari terakhir siklus bernilai `0 + 1 = 1` (bukan 2), dan `hariSejakMulai` di hari pertama bernilai `0` — yang lalu memicu penjagaan `N > 0` di §4.5. Menafsirkannya sebagai hitungan inklusif akan membelah dua jatah harian di hari terakhir siklus dan merusak ramp cold-start.
+Both arguments are `dayKey` strings, so `dayStartHour` is already absorbed into them and must not be applied twice. **`daysBetween(x, x) === 0`.** The consequences are binding: `daysRemaining` on the last day of the cycle has a value of `0 + 1 = 1` (not 2), and `daysSinceStart` on the first day has a value of `0` — which then triggers the `N > 0` guard in §4.5. Interpreting it as an inclusive count would halve the daily allowance on the last day of the cycle and ruin the cold-start ramp.
 
-**Saldo dompet.**
+**Wallet balance.**
 ```
-saldoDompet(w) = w.initialBalance
-               + Σ(in  → w)
-               − Σ(out ← w)
-               + Σ(move → w)
-               − Σ(move ← w)
+walletBalance(w) = w.initialBalance
+                 + Σ(in  → w)
+                 − Σ(out ← w)
+                 + Σ(move → w)
+                 − Σ(move ← w)
 ```
-Hanya transaksi dengan `deletedAt == null`.
+Only transactions with `deletedAt == null`.
 
-**Saldo belanja.** Jumlah saldo seluruh dompet ber-`kind: 'spendable'` yang tidak diarsipkan.
+**Spendable balance.** Total balance of all wallets with `kind: 'spendable'` that are not archived.
 ```
-saldoBelanja = Σ saldoDompet(w)  untuk w.kind == 'spendable' && !w.archived
+spendableBalance = Σ walletBalance(w)  for w.kind == 'spendable' && !w.archived
 ```
-Dompet ber-`kind: 'reserve'` (tabungan, dana darurat) **tidak** ikut. Inilah pengganti kategori VAULT di v1, dan lebih jujur: di v1, VAULT hanyalah label pada pengeluaran; di v2, uang yang ditabung benar-benar keluar dari kolam yang boleh dibelanjakan.
+Wallets with `kind: 'reserve'` (savings, emergency funds) do **not** count. This is the replacement for the VAULT category in v1, and is more honest: in v1, VAULT was merely a label on expenses; in v2, saved money genuinely leaves the pool that can be spent.
 
-### 4.2 Siklus
+### 4.2 Cycle
 
-Tiga mode, karena penghasilan tidak selalu teratur.
+Three modes, because income is not always regular.
 
-| Mode | Perilaku | Untuk siapa |
+| Mode | Behavior | For whom |
 |---|---|---|
-| `monthly-day` (default) | Siklus berjalan dari tanggal `cycleAnchorDay` bulan ini sampai sehari sebelum tanggal yang sama bulan depan | Gajian tanggal tetap |
-| `manual` | Pemakai menetapkan tanggal akhir siklus; saat terlewat, aplikasi meminta tanggal berikutnya | Penghasilan tidak teratur tapi bisa diperkirakan |
-| `rolling` | `cycleEnd = hari ini + 29`, selalu horizon 30 hari | Penghasilan benar-benar tidak terduga |
+| `monthly-day` (default) | Cycle runs from the `cycleAnchorDay` date of this month until the day before the same date next month | Fixed payday date |
+| `manual` | User sets cycle end date; when passed, the app asks for the next date | Irregular but predictable income |
+| `rolling` | `cycleEnd = today + 29`, always a 30-day horizon | Unpredictable income |
 
-**Edge case yang wajib ditangani:**
+**Edge cases that must be handled:**
 
-- `cycleAnchorDay = 31` di bulan Februari → dijepit ke hari terakhir bulan (28 atau 29). Berlaku juga untuk 29, 30, 31 di bulan-bulan pendek.
-- Tahun kabisat.
-- Mode `manual` yang tanggal akhirnya sudah lewat → status `cycle-expired`, aplikasi menampilkan prompt dan **sementara memakai perilaku `rolling`** supaya angka jangkar tidak pernah kosong.
+- `cycleAnchorDay = 31` in February → clamped to the last day of the month (28 or 29). Also applies to 29, 30, 31 in short months.
+- Leap years.
+- `manual` mode whose end date has passed → `cycle-expired` status, the app displays a prompt and **temporarily uses `rolling` behavior** so the anchor number is never empty.
 
 ```
-sisaHari = max(1, selisihHari(cycleEnd, hariIni) + 1)
+daysRemaining = max(1, daysBetween(cycleEnd, today) + 1)
 ```
 
-Penjepitan `max(1, …)` adalah pertahanan mutlak terhadap pembagian nol di hari terakhir siklus.
+The `max(1, …)` clamping is an absolute defense against division by zero on the last day of the cycle.
 
-### 4.3 Komitmen
+### 4.3 Commitment
 
-Entitas yang **tidak ada di desain awal** dan ditambahkan setelah review menemukan bahwa tanpanya angka jangkar berbohong setiap hari (§13.1, M-02).
+An entity that was **absent in the initial design** and added after review found that without it, the anchor number lied every day (§13.1, M-02).
 
 ```
 Commitment { id, name, amount, kind: 'bill' | 'saving', dueDay: 1..31, walletId?, active }
 ```
 
-**Status lunas tidak disimpan — ia diturunkan dari transaksi.** Ini keputusan yang menentukan, diambil setelah review kedua (§13.2) menunjukkan bahwa menyimpan daftar `paidCycles` melahirkan tiga cacat sekaligus: tulis-ganda tanpa atomisitas, tidak adanya sinkronisasi balik saat pembayaran dihapus, dan kunci siklus yang mustahil didefinisikan untuk mode `manual` dan `rolling`. Menurunkannya dari transaksi menghapus ketiganya di akar, dan menghasilkan kode yang lebih sedikit.
+**Paid status is not stored — it is derived from transactions.** This is a decisive choice, made after the second review (§13.2) showed that storing a `paidCycles` list created three flaws simultaneously: double-writing without atomicity, lack of reverse synchronization when payments are deleted, and cycle keys that are impossible to define for `manual` and `rolling` modes. Deriving it from transactions removes all three at the root, and results in less code.
 
-**Jendela komitmen.**
+**Commitment window.**
 ```
-jendelaKomitmen = [awalBulanIni, cycleEnd]
-```
-
-Satu aturan yang berlaku untuk ketiga mode siklus. Batas bawahnya adalah awal bulan berjalan, bukan hari ini — inilah yang membuat tagihan yang **sudah lewat jatuh tempo tapi belum dibayar** tetap terhitung. Batas bawah `hariIni` pada desain sebelumnya menghasilkan perilaku yang justru merusak: kamu lupa bayar listrik tanggal 10, lalu tanggal 11 aplikasi memberi tahu bahwa uangmu **bertambah**. Angka jangkar yang mengganjar kelalaian lebih buruk daripada tidak ada angka sama sekali.
-
-```
-sudahDibayar(c) = ada transaksi aktif dengan
-                    commitmentId == c.id
-                 && dayKey ∈ jendelaKomitmen
-
-komitmenBelumDibayar = Σ c.amount
-  untuk c.active
-   && kejadianJatuhTempo(c) ∈ jendelaKomitmen
-   && !sudahDibayar(c)
+commitmentWindow = [startOfMonth, cycleEnd]
 ```
 
-Karena `sudahDibayar` adalah query, menghapus pembayaran ke trash otomatis membuat komitmennya kembali belum lunas, dan memulihkannya membuatnya lunas lagi. Tidak ada kode sinkronisasi yang perlu ditulis, jadi tidak ada kode sinkronisasi yang bisa salah.
+One rule that applies to all three cycle modes. Its lower bound is the start of the current month, not today — this is what keeps bills that are **past due but unpaid** counted. A lower bound of `today` in the previous design produced damaging behavior: you forgot to pay electricity on the 10th, then on the 11th the app informed you that your money **increased**. An anchor number that rewards negligence is worse than no number at all.
 
-**Membayar.** Dari layar Komitmen lewat tombol **Bayar**, yang membuat satu transaksi dengan `commitmentId` terisi dan `intent = 'routine'` otomatis. Satu penulisan, satu tabel — tidak butuh transaksi lintas-tabel. Tombolnya idempoten: bila `sudahDibayar(c)` sudah benar, tombol berubah jadi label "lunas" dan tidak bisa ditekan lagi. Tidak ada deteksi otomatis dari transaksi biasa — terlalu rawan salah tebak.
+```
+isPaid(c) = there is an active transaction with
+              commitmentId == c.id
+           && dayKey ∈ commitmentWindow
 
-**Dua jenis komitmen.**
+unpaidCommitments = Σ c.amount
+  for c.active
+   && dueOccurrence(c) ∈ commitmentWindow
+   && !isPaid(c)
+```
 
-| `kind` | Dipenuhi dengan | Efek |
+Because `isPaid` is a query, deleting a payment to trash automatically makes its commitment unpaid again, and restoring it makes it paid again. No synchronization code needs to be written, so no synchronization code can go wrong.
+
+**Paying.** From the Commitment screen via the **Bayar** button, which creates a single transaction with `commitmentId` filled in and `intent = 'routine'` automatically. One write, one table — no cross-table transactions needed. The button is idempotent: when `isPaid(c)` is already true, the button changes to a "lunas" label and can no longer be pressed. No automatic detection from regular transactions — too prone to misguessing.
+
+**Two commitment types.**
+
+| `kind` | Fulfilled with | Effect |
 |---|---|---|
-| `bill` | Transaksi `out` | Uang keluar dari sistem |
-| `saving` | Transaksi `move` ke dompet `reserve` | Uang pindah ke tabungan |
+| `bill` | `out` transaction | Money leaves the system |
+| `saving` | `move` transaction to `reserve` wallet | Money moves to savings |
 
-Jenis `saving` ada untuk menyelesaikan cacat perilaku yang ditemukan review kedua: tanpanya, memindahkan Rp 500.000 ke tabungan **menurunkan jatah harian secara mendadak**, sehingga aplikasi terasa menghukum tepat pada perilaku yang seharusnya ia dorong. Dengan menabung dimodelkan sebagai komitmen, uangnya sudah dipotong di muka sejak awal siklus — memindahkannya ke `reserve` tidak mengubah jatah sama sekali, karena jatah itu memang sudah tidak pernah menghitungnya. Menabung berubah dari kejutan jadi rencana.
+The `saving` type exists to resolve a behavioral defect found in the second review: without it, moving Rp 500.000 to savings **suddenly drops the daily allowance**, making the app feel like it punishes the exact behavior it should encourage. With saving modeled as a commitment, the money is already deducted upfront from the start of the cycle — moving it to `reserve` does not change the allowance at all, because the allowance was never counting it in the first place. Saving transforms from a surprise into a plan.
 
-**Konsekuensi penting:** transaksi ber-`commitmentId` **dikecualikan dari belanja diskresioner**. Ia bukan cerminan kebiasaan; ia kewajiban yang sudah diperhitungkan di muka.
+**Important consequence:** transactions with `commitmentId` are **excluded from discretionary spend**. They are not a reflection of habits; they are obligations already factored in upfront.
 
-**Edge case.** Komitmen dengan `amount` melebihi `saldoBelanja` membuat `danaTersedia` negatif — ditangani sebagai kondisi minus (§4.4), bukan error. Komitmen yang dibuat di tengah siklus langsung ikut terhitung bila kejadian jatuh temponya masih di dalam jendela. `dueDay` 29–31 di bulan pendek dijepit ke hari terakhir bulan, sama seperti `cycleAnchorDay` (§4.2).
+**Edge case.** A commitment with an `amount` exceeding `spendableBalance` makes `availableFunds` negative — handled as a minus condition (§4.4), not an error. A commitment created mid-cycle is immediately included if its due occurrence is still within the window. `dueDay` 29–31 in short months is clamped to the last day of the month, just like `cycleAnchorDay` (§4.2).
 
-### 4.4 Jatah harian
+### 4.4 Daily allowance
 
-Rumus final, sudah tahan double-counting:
+Final formula, already double-counting proof:
 
 ```
-terpakaiHariIni = Σ amount  untuk out, dayKey == hariIni, commitmentId == null
-basisJatah      = saldoBelanja + terpakaiHariIni
-danaTersedia    = basisJatah − komitmenBelumDibayar − endBuffer
-jatahHariIni    = danaTersedia > 0 ? floor(danaTersedia / sisaHari) : 0
-sisaJatah       = jatahHariIni − terpakaiHariIni
+spentToday         = Σ amount  for out, dayKey == today, commitmentId == null
+allowanceBasis     = spendableBalance + spentToday
+availableFunds     = allowanceBasis − unpaidCommitments − endBuffer
+allowanceToday     = availableFunds > 0 ? floor(availableFunds / daysRemaining) : 0
+remainingAllowance = allowanceToday − spentToday
 ```
 
-**Kenapa `basisJatah` menambahkan kembali belanja hari ini.** `saldoBelanja` sudah berkurang oleh pengeluaran hari ini. Kalau `jatahHariIni` dihitung langsung darinya lalu `terpakaiHariIni` dikurangkan lagi, pengeluaran yang sama dihukum dua kali dan angkanya bergerak liar sepanjang hari. Dengan menambahkannya kembali, `jatahHariIni` stabil dan hanya `sisaJatah` yang turun — persis seperti saldo amplop yang menipis. Efek "boros hari ini → jatah besok turun" tetap muncul, karena besok `saldoBelanja` sudah lebih kecil sementara `sisaHari` berkurang satu.
+**Why `allowanceBasis` adds back today's spend.** `spendableBalance` is already reduced by today's expenses. If `allowanceToday` were calculated directly from it and then `spentToday` subtracted again, the same expense would be penalized twice and the number would fluctuate wildly throughout the day. By adding it back, `allowanceToday` remains stable and only `remainingAllowance` goes down — just like a depleting envelope balance. The "wasteful today → tomorrow's allowance drops" effect still occurs, because tomorrow `spendableBalance` is already smaller while `daysRemaining` decreases by one.
 
-**Batas kestabilan itu, dinyatakan jujur.** Penambahan-kembali hanya menetralkan **pengeluaran diskresioner**. Ia tidak menetralkan apa pun yang lain, dan memang tidak seharusnya:
+**The limit of that stability, stated honestly.** The adding-back only neutralizes **discretionary spend**. It does not neutralize anything else, and indeed it should not:
 
-| Kejadian di tengah hari | `jatahHariIni` | Benar? |
+| Mid-day event | `allowanceToday` | Correct? |
 |---|---|---|
-| Belanja diskresioner | tidak berubah | ya — inti mekanismenya |
-| Pemasukan diterima | **naik seketika** | ya — uangmu memang bertambah |
-| Bayar komitmen | tidak berubah | ya — saldo dan kewajiban turun bersamaan |
-| Pindah ke dompet `reserve` | tidak berubah bila lewat komitmen `saving` (§4.3) | ya |
-| Riwayat lama diedit/dihapus | berubah | ya, tapi **wajib dijelaskan** (§7.1) |
-| `endBuffer` diubah | berubah | ya, tapi **wajib dipratinjau** (§7.4) |
+| Discretionary spend | unchanged | yes — core mechanism |
+| Income received | **increases instantly** | yes — your money actually increased |
+| Pay commitment | unchanged | yes — balance and obligation drop together |
+| Move to `reserve` wallet | unchanged if via `saving` commitment (§4.3) | yes |
+| Old history edited/deleted | changes | yes, but **must be explained** (§7.1) |
+| `endBuffer` changed | changes | yes, but **must be previewed** (§7.4) |
 
-Klaim yang berlaku adalah "stabil terhadap pengeluaran diskresioner sepanjang hari", bukan "stabil sepanjang hari". Versi kedua dari klaim itu keliru, dan review kedua benar menangkapnya (§13.2, C-02).
+The applicable claim is "stable against discretionary spend throughout the day", not "stable throughout the day". The second version of that claim is wrong, and the second review correctly caught it (§13.2, C-02).
 
-**Perubahan yang tidak berasal dari hari ini wajib punya penjelasan.** Bila `jatahHariIni` berubah karena riwayat lama diedit, dihapus, dipulihkan, atau karena pengaturan diubah, layar Catat menampilkan banner sekali-lewat: *"Jatah berubah karena riwayat diubah"* atau *"Jatah berubah karena buffer diubah"*. Angka jangkar yang bergerak tanpa sebab yang terlihat adalah angka jangkar yang berhenti dipercaya.
+**Changes not originating from today must have an explanation.** When `allowanceToday` changes because old history was edited, deleted, restored, or because settings were changed, the Record screen displays a one-time banner: *"Jatah berubah karena riwayat diubah"* or *"Jatah berubah karena buffer diubah"*. An anchor number that moves without a visible cause is an anchor number that ceases to be trusted.
 
-**Verifikasi dengan kasus yang meruntuhkan desain awal:**
+**Verification with the case that broke the initial design:**
 
-> Saldo Rp 3.000.000 di hari ke-5. Sewa Rp 2.000.000 jatuh tempo tanggal 25. Siklus berakhir tanggal 30.
+> Balance Rp 3.000.000 on day 5. Rent Rp 2.000.000 due on the 25th. Cycle ends on the 30th.
 
-| Tanpa komitmen (desain awal) | Dengan komitmen (final) |
+| Without commitments (initial design) | With commitments (final) |
 |---|---|
-| jatah = 3.000.000 / 26 = **Rp 115.384/hari** | dana = 3.000.000 − 2.000.000 = 1.000.000 |
-| Pemakai belanja Rp 100rb/hari dengan tenang | jatah = 1.000.000 / 26 = **Rp 38.461/hari** |
-| Tanggal 25 bayar sewa → saldo Rp 0 | Tanggal 25 bayar sewa → sisa ≈ Rp 200.000 |
-| Jatah anjlok ke **Rp 0/hari** selama 5 hari | jatah = 200.000 / 6 = **Rp 33.333/hari** |
-| **Angka jangkar berbohong 20 hari berturut-turut** | Tidak ada tebing. Konsisten dari awal. |
+| allowance = 3.000.000 / 26 = **Rp 115.384/day** | funds = 3.000.000 − 2.000.000 = 1.000.000 |
+| User spends Rp 100k/day peacefully | allowance = 1.000.000 / 26 = **Rp 38.461/day** |
+| On the 25th pay rent → balance Rp 0 | On the 25th pay rent → remaining ≈ Rp 200.000 |
+| Allowance plummets to **Rp 0/day** for 5 days | allowance = 200.000 / 6 = **Rp 33.333/day** |
+| **Anchor number lies 20 consecutive days** | No cliff. Consistent from the start. |
 
-**Kondisi minus.** Bila `danaTersedia ≤ 0`, `jatahHariIni = 0` dan antarmuka **tidak menampilkan angka negatif di slot besar**. Yang ditampilkan:
+**Minus condition.** When `availableFunds ≤ 0`, `allowanceToday = 0` and the interface **does not display a negative number in the big slot**. What is displayed:
 
 ```
 Rp 0
 Kamu minus Rp 420.000 sampai 25 Agu
 ```
 
-Angka negatif raksasa itu menghukum tanpa memberi arah. Kalimat eksplisit memberi tahu besaran dan batas waktunya.
+That giant negative number punishes without giving direction. An explicit sentence provides the magnitude and time limit.
 
-**Kondisi terlampaui.** Bila `sisaJatah < 0`, slot besar menampilkan `Rp 0` dengan baris merah `Lewat Rp 12.500 hari ini`.
+**Exceeded condition.** When `remainingAllowance < 0`, the big slot displays `Rp 0` with a red line `Lewat Rp 12.500 hari ini`.
 
 ### 4.5 Runway
 
 ```
-hariSejakMulai    = selisihHari(hariIni, settings.startedAt)           // 0 pada hari pertama
-belanjaHarian(d)  = Σ amount  untuk out, dayKey == d, commitmentId == null
-N                 = min(28, hariSejakMulai)
-jendelaRata       = [hariIni − N, hariIni − 1]                        // TIDAK termasuk hari ini
-rataAktual        = N > 0 ? mean(belanjaHarian(d)) untuk d ∈ jendelaRata : 0   // hari tanpa belanja dihitung 0
-w                 = min(1, hariSejakMulai / 14)
-rataHarian        = w × rataAktual + (1 − w) × seedDailySpend
-biayaKomitmenHarian = Σ(komitmen aktif) / panjangSiklus
-biayaHarianTotal  = rataHarian + biayaKomitmenHarian
-runway            = biayaHarianTotal > 0 ? floor(saldoBelanja / biayaHarianTotal) : null
+daysSinceStart      = daysBetween(today, settings.startedAt)             // 0 on the first day
+dailySpend(d)       = Σ amount  for out, dayKey == d, commitmentId == null
+N                   = min(28, daysSinceStart)
+averageWindow       = [today − N, today − 1]                             // NOT including today
+actualAverage       = N > 0 ? mean(dailySpend(d)) for d ∈ averageWindow : 0     // days without spend counted as 0
+w                   = min(1, daysSinceStart / 14)
+dailyAverage        = w × actualAverage + (1 − w) × seedDailySpend
+dailyCommitmentCost = Σ(active commitments) / cycleLength
+totalDailyCost      = dailyAverage + dailyCommitmentCost
+runway              = totalDailyCost > 0 ? floor(spendableBalance / totalDailyCost) : null
 ```
 
-Penjagaan `N > 0` bukan hiasan: tanpanya, `mean([])` menghasilkan `NaN`, dan `0 × NaN` di JavaScript tetap `NaN` — jadi bobot nol **tidak** menyelamatkan hari pertama. Ini harus diuji secara eksplisit (§10.1).
+The `N > 0` guard is not decorative: without it, `mean([])` produces `NaN`, and `0 × NaN` in JavaScript remains `NaN` — so a zero weight does **not** save the first day. This must be tested explicitly (§10.1).
 
-**Hari ini sengaja dikeluarkan dari jendela rata-rata.** Hari yang sedang berjalan adalah data separuh jadi. Kalau ikut dihitung, pukul sembilan pagi ia menyumbang Rp 0 dan menyeret rata-rata turun, sehingga runway terlihat lebih panjang justru di saat kamu belum belanja apa-apa — lalu memendek sepanjang hari. Runway yang berkedip sepanjang hari adalah runway yang tidak dipercaya.
+**Today is intentionally excluded from the average window.** The day in progress is half-baked data. If included, at nine in the morning it contributes Rp 0 and drags the average down, making runway appear longer precisely when you have not spent anything yet — then shortening throughout the day. A runway that flickers throughout the day is a runway that is not trusted.
 
-**Tidak ada trimming outlier.** Desain awal membuang 2 hari terboros untuk meredam satu pembelian besar. Review menunjukkan itu justru membuang sewa, listrik, dan pupuk — pengeluaran terbesar dan paling nyata — sehingga runway jadi optimistis palsu (§13.1, M-03). Karena komitmen kini dimodelkan terpisah dan eksplisit, sumber distorsinya hilang di akar. Rumusnya jadi lebih jujur **dan** lebih pendek.
+**No outlier trimming.** The initial design discarded the 2 most wasteful days to dampen a single large purchase. Review showed that this actually discarded rent, electricity, and fertilizer — the largest and most real expenses — making runway falsely optimistic (§13.1, M-03). Because commitments are now modeled separately and explicitly, the source of distortion is eliminated at the root. The formula becomes more honest **and** shorter.
 
-**Cold start.** `seedDailySpend` diisi saat onboarding ("sehari kira-kira habis berapa?"). Bobotnya meluruh linear selama 14 hari sampai murni data asli. Selama `w < 1`, antarmuka menandai angkanya dengan label `perkiraan`. Ini menyelesaikan kontradiksi antara D2 (buang semua data) dan metrik yang butuh 28 hari data (§13.1, CS-01), **tanpa** membatalkan keputusan buang-data.
+**Cold start.** `seedDailySpend` is populated during onboarding ("Sehari kira-kira habis berapa?"). Its weight decays linearly over 14 days until it is purely real data. While `w < 1`, the interface marks the figure with the label `perkiraan`. This resolves the contradiction between D2 (discard all data) and metrics requiring 28 days of data (§13.1, CS-01), **without** rescinding the data-discard decision.
 
-**Bila `biayaHarianTotal == 0`** (belum ada belanja, tidak ada komitmen, seed nol): tampilkan `—`, bukan `Infinity`.
+**When `totalDailyCost == 0`** (no spend yet, no commitments, zero seed): display `—`, not `Infinity`.
 
-### 4.6 Rasio impuls
+### 4.6 Impulse ratio
 
-Angka utama dashboard.
+Primary dashboard metric.
 
 ```
-periode     = [cycleStart, hariIni]                  // siklus berjalan, bukan bulan kalender
-rasioImpuls = Σ(out, intent='impulse', diskresioner, periode)
-            / Σ(out, diskresioner, periode)
+period       = [cycleStart, today]                    // running cycle, not calendar month
+impulseRatio = Σ(out, intent='impulse', discretionary, period)
+             / Σ(out, discretionary, period)
 ```
 
-Periodenya adalah **siklus berjalan**, karena itulah rentang yang sama dengan jatah harian — memakai bulan kalender akan membuat dua angka di layar yang sama mengukur rentang waktu berbeda. Bila siklus baru berjalan kurang dari 3 hari, tampilkan pembilangnya apa adanya dengan keterangan `<n> hari data` dan sembunyikan persentasenya; rasio dari dua transaksi bukan informasi, itu derau.
+The period is the **running cycle**, because that is the same range as the daily allowance — using a calendar month would cause two numbers on the same screen to measure different time spans. If the cycle has been running for less than 3 days, display the numerator as is with the note `<n> hari data` and hide the percentage; a ratio of two transactions is not information, it is noise.
 
-Dihitung **hanya atas belanja diskresioner**. Kalau pembayaran komitmen ikut penyebut, rasionya terlihat kecil secara palsu — sewa besar akan mengencerkan angka impuls dan menghilangkan sinyalnya.
+Calculated **only on discretionary spend**. If commitment payments were included in the denominator, the ratio would falsely appear small — large rent would dilute the impulse figure and eliminate its signal.
 
-Disajikan konkret, bukan sebagai persentase telanjang:
+Presented concretely, not as a bare percentage:
 
 > **Impuls bulan ini Rp 420.000** — setara **9 hari runway**
 
-Konversi ke hari (`nilaiImpuls / biayaHarianTotal`) adalah inti terapi perilakunya: mengubah angka abstrak jadi waktu hidup yang hilang.
+Conversion to days (`impulseAmount / totalDailyCost`) is the core of its behavioral therapy: transforming an abstract number into lost life time.
 
-**Darurat mendapat perlakuan yang sama persis.** Ini penting dan sengaja. Niat `emergency` ditambahkan supaya pengeluaran yang benar-benar tak terhindarkan tidak mencemari rasio impuls (§13.1, UX-02) — tapi persis karena ia bebas dari beban rasa bersalah, ia jadi tempat pelarian yang nyaman untuk apa pun yang ingin dibenarkan. Kalau `IMPULSIF` berkonsekuensi dan `DARURAT` tidak, setiap pengeluaran yang canggung akan bermigrasi ke sana, dan metrik yang seluruh aplikasi ini dibangun untuk menghasilkannya jadi kosong.
+**Emergency receives the exact same treatment.** This is important and deliberate. The `emergency` intent was added so truly unavoidable expenses would not contaminate the impulse ratio (§13.1, UX-02) — but precisely because it is free of guilt burden, it becomes a comfortable refuge for anything seeking justification. If `IMPULSIF` has consequences and `DARURAT` does not, every awkward expense will migrate there, and the metric this entire app was built to produce becomes empty.
 
-Karena itu belanja darurat disajikan dengan bingkai yang identik — *"Darurat bulan ini Rp 800.000 — setara 17 hari runway"* — dan bila belanja darurat melampaui **20% belanja diskresioner** dalam satu siklus, layar Sadar memunculkan satu pertanyaan tanpa menghakimi: *"Pengeluaran darurat siklus ini tinggi. Semuanya benar-benar darurat?"* Memaksa refleksi, tidak memblokir input.
+Because of this, emergency spend is presented with an identical frame — *"Darurat bulan ini Rp 800.000 — setara 17 hari runway"* — and if emergency spend exceeds **20% of discretionary spend** in a single cycle, the Sadar screen raises a single non-judgmental question: *"Pengeluaran darurat siklus ini tinggi. Semuanya benar-benar darurat?"* Forcing reflection, not blocking input.
 
-### 4.7 Metrik pendukung
+### 4.7 Supporting metrics
 
-| Metrik | Rumus | Muncul di |
+| Metric | Formula | Appears in |
 |---|---|---|
-| Banding minggu | `(belanja7HariIni − rata4Minggu) / rata4Minggu` | Sadar, rekap mingguan |
-| Rincian tag | `Σ amount per tag`, 8 teratas + "lainnya" | Sadar |
-| Sebaran niat | `Σ amount per intent` | Sadar |
-| Seri sparkline | `belanjaHarian(d)` untuk 28 hari + garis `jatahHariIni` | Sadar |
-| Beban darurat | `Σ(intent='emergency', 90 hari) / 3` per bulan | Sadar |
+| Week comparison | `(spend7DaysToday − average4Weeks) / average4Weeks` | Sadar, weekly recap |
+| Tag breakdown | `Σ amount per tag`, top 8 + "lainnya" | Sadar |
+| Intent distribution | `Σ amount per intent` | Sadar |
+| Sparkline series | `dailySpend(d)` for 28 days + `allowanceToday` line | Sadar |
+| Emergency burden | `Σ(intent='emergency', 90 days) / 3` per month | Sadar |
 
-**Penjagaan data tipis.** Setiap metrik di atas wajib punya jalur "belum cukup data" dan tidak boleh pernah menampilkan `NaN`, `Infinity`, atau persentase yang dihitung dari penyebut nol:
+**Thin data guard.** Every metric above must have a "belum cukup data" path and must never display `NaN`, `Infinity`, or a percentage calculated from a zero denominator:
 
-- Banding minggu disembunyikan bila `hariSejakMulai < 7`. Bila `rata4Minggu == 0`, tampilkan `belum cukup data`, bukan pembagian nol. Bila data kurang dari 4 minggu penuh, pakai minggu yang tersedia dan beri keterangan jumlah minggunya.
-- Rincian tag dan sebaran niat menampilkan keadaan kosong bila belum ada transaksi keluar.
-- Sparkline menggambar hari kosong sebagai nol, bukan melompatinya — celah pada grafik membohongi mata.
+- Week comparison is hidden when `daysSinceStart < 7`. When `average4Weeks == 0`, display `belum cukup data`, not division by zero. When data is less than 4 full weeks, use the available weeks and note the number of weeks.
+- Tag breakdown and intent distribution display an empty state when there are no outgoing transactions yet.
+- Sparkline draws empty days as zero, rather than skipping them — gaps in the graph deceive the eyes.
 
 ---
 
-## 5. Model Data
+## 5. Data Model
 
 ```ts
 type Kind   = 'out' | 'in' | 'move'
@@ -312,15 +312,15 @@ type Intent = 'planned' | 'routine' | 'impulse' | 'emergency'
 interface Transaction {
   id: string                   // uuid v4
   kind: Kind
-  amount: number               // rupiah bulat, > 0, selalu positif
-  intent: Intent | null        // wajib bila kind==='out', selain itu null
-  tag: string | null           // TEPAT SATU tag atau tidak sama sekali — bukan array
-  note: string | null          // maks 200 karakter, tersembunyi di balik "tambah catatan"
-  walletId: string             // sumber untuk out/move, tujuan untuk in
-  toWalletId: string | null    // wajib bila kind==='move', selain itu null
-  commitmentId: string | null   // terisi bila out ini membayar komitmen
+  amount: number               // integer rupiah, > 0, always positive
+  intent: Intent | null        // mandatory when kind==='out', otherwise null
+  tag: string | null           // EXACTLY ONE tag or none at all — not an array
+  note: string | null          // max 200 characters, hidden behind "tambah catatan"
+  walletId: string             // source for out/move, target for in
+  toWalletId: string | null    // mandatory when kind==='move', otherwise null
+  commitmentId: string | null   // filled when this out pays a commitment
   at: number                   // epoch ms
-  dayKey: string               // 'YYYY-MM-DD', turunan, diindeks
+  dayKey: string               // 'YYYY-MM-DD', derived, indexed
   createdAt: number
   updatedAt: number
   deletedAt: number | null     // soft delete
@@ -339,22 +339,22 @@ interface Commitment {
   id: string
   name: string
   amount: number
-  kind: 'bill' | 'saving'      // 'saving' dipenuhi dengan move ke dompet reserve
-  dueDay: number               // 1..31, dijepit ke akhir bulan bila perlu
+  kind: 'bill' | 'saving'      // 'saving' is fulfilled with move to reserve wallet
+  dueDay: number               // 1..31, clamped to end of month if necessary
   walletId: string | null
   active: boolean
-  // TIDAK ada paidCycles. Status lunas diturunkan dari transaksi (§4.3).
+  // NO paidCycles. Paid status is derived from transactions (§4.3).
 }
 
 interface NotifSettings {
-  jatahTerlampaui: boolean     // saat sisaJatah < 0, foreground
-  belumMencatat: boolean       // 20:00 bila hari ini kosong
-  ringkasanHarian: boolean     // 21:00
-  rekapMingguan: boolean       // Minggu 20:00
-  jamHarian: number            // 0..23, default 21
-  jamBelumMencatat: number     // 0..23, default 20
-  hariRekap: number            // 0=Minggu, default 0
-  jamRekap: number             // 0..23, default 20
+  allowanceExceeded: boolean   // when remainingAllowance < 0, foreground
+  notRecorded: boolean         // 20:00 if today is empty
+  dailySummary: boolean        // 21:00
+  weeklyRecap: boolean         // Sunday 20:00
+  dailyHour: number            // 0..23, default 21
+  unrecordedHour: number       // 0..23, default 20
+  recapDay: number             // 0=Sunday, default 0
+  recapHour: number            // 0..23, default 20
 }
 
 interface Settings {
@@ -364,53 +364,53 @@ interface Settings {
   endBuffer: number
   dayStartHour: number         // 0..6
   seedDailySpend: number
-  startedAt: string            // 'YYYY-MM-DD', untuk ramp cold-start
+  startedAt: string            // 'YYYY-MM-DD', for cold-start ramp
   notif: NotifSettings
   bigDeleteThreshold: number   // default 1_000_000
   schemaVersion: number
 }
 ```
 
-### 5.1 Aturan integritas
+### 5.1 Integrity rules
 
-Divalidasi di lapisan repository, bukan hanya di UI — UI bisa dilewati, repository tidak.
+Validated at the repository layer, not just in the UI — the UI can be bypassed, the repository cannot.
 
-| Aturan | Penegakan |
+| Rule | Enforcement |
 |---|---|
-| `amount > 0` dan bilangan bulat | Tolak tulis |
-| `intent != null` ⟺ `kind === 'out'` | Tolak tulis |
-| `toWalletId != null` ⟺ `kind === 'move'` | Tolak tulis |
-| `walletId !== toWalletId` | Tolak tulis |
-| `commitmentId != null` ⟹ `kind === 'out'`, atau `kind === 'move'` dengan tujuan dompet `reserve` | Tolak tulis |
-| **`at` tidak boleh melewati akhir hari ini** | Tolak tulis |
-| Dompet yang masih dirujuk transaksi aktif tidak boleh dihapus | Tolak, tawarkan arsip |
-| **Dompet `spendable` bersaldo bukan-nol tidak boleh diarsipkan** | Tolak, minta pindahkan dananya dulu |
-| `note` maksimal 200 karakter | Potong di UI, tolak di repository |
-| `dayKey` selalu turunan `at` + `dayStartHour` | Dihitung ulang saat tulis |
+| `amount > 0` and integer | Reject write |
+| `intent != null` ⟺ `kind === 'out'` | Reject write |
+| `toWalletId != null` ⟺ `kind === 'move'` | Reject write |
+| `walletId !== toWalletId` | Reject write |
+| `commitmentId != null` ⟹ `kind === 'out'`, or `kind === 'move'` with target wallet `reserve` | Reject write |
+| **`at` must not exceed the end of today** | Reject write |
+| Wallets still referenced by active transactions cannot be deleted | Reject, offer archive |
+| **`spendable` wallets with non-zero balance cannot be archived** | Reject, require moving funds first |
+| `note` maximum 200 characters | Truncate in UI, reject in repository |
+| `dayKey` always derived from `at` + `dayStartHour` | Recalculated on write |
 
-**Kenapa tanggal masa depan dilarang.** `saldoDompet` (§4.1) tidak menyaring tanggal, sementara `terpakaiHariIni` (§4.4) hanya menjumlah `dayKey` hari ini. Transaksi bertanggal besok karena itu mengurangi saldo **tanpa** ikut dikembalikan oleh mekanisme penambahan-kembali, sehingga jatah hari ini menyusut diam-diam lalu dihitung sekali lagi besok. Melarang tanggal masa depan di lapisan repository mematikan seluruh kelas bug ini dengan satu aturan, jauh lebih murah daripada menambal rumusnya.
+**Why future dates are forbidden.** `walletBalance` (§4.1) does not filter dates, while `spentToday` (§4.4) only sums `dayKey` for today. Transactions dated tomorrow therefore reduce the balance **without** being added back by the add-back mechanism, causing today's allowance to shrink silently and then get counted once more tomorrow. Forbidding future dates at the repository layer eliminates this entire class of bugs with a single rule, far cheaper than patching the formula.
 
-**Kenapa arsip dompet bersaldo diblokir.** Ini justru cacat yang lahir dari aturan keamanan di baris sebelumnya: dompet yang masih dirujuk tidak boleh dihapus, dan penggantinya adalah arsip — padahal arsip mengeluarkan dompet itu dari `saldoBelanja`, sehingga jalur "aman" itulah yang justru melenyapkan uang dari basis jatah tanpa penjelasan. Mewajibkan dana dipindahkan lebih dulu membuat perubahan saldonya terlihat sebagai transaksi `move` yang nyata.
+**Why archiving a wallet with a balance is blocked.** This is actually a flaw born from the safety rule in the previous row: wallets still referenced cannot be deleted, and their replacement is archiving — even though archiving excludes that wallet from `spendableBalance`, so that "safe" path is precisely what causes money to disappear from the allowance basis without explanation. Requiring funds to be moved first makes its balance change visible as an actual `move` transaction.
 
-### 5.1.1 Aturan penyuntingan
+### 5.1.1 Editing rules
 
-§7.3 mengizinkan menyentuh entri untuk diedit. Yang boleh berubah dibatasi, karena tiap kolom punya konsekuensi ke rumus:
+§7.3 allows touching entries to edit them. What can be changed is restricted, because every column has consequences for formulas:
 
-| Kolom | Boleh diedit? | Alasan |
+| Column | Editable? | Reason |
 |---|---|---|
-| `amount` | ya | Koreksi salah ketik, kasus paling umum |
-| `intent` | ya, hanya untuk `kind === 'out'` | Koreksi salah tap — ini yang membuat §7.1 aman |
-| `tag`, `note` | ya | Tanpa efek ke rumus |
-| `walletId`, `toWalletId` | ya | Divalidasi ulang terhadap aturan §5.1 |
-| `at` / `dayKey` | ya, tapi tidak boleh ke masa depan | Mengubah hari mana yang terbebani |
-| `kind` | **tidak** | Mengubah `out` jadi `in` membalik arah uang dan membatalkan seluruh aturan integritas sekaligus. Hapus lalu buat ulang. |
-| `commitmentId` | **tidak** | Status lunas diturunkan darinya (§4.3); hanya alur Bayar yang boleh menetapkannya |
+| `amount` | yes | Typo correction, most common case |
+| `intent` | yes, only for `kind === 'out'` | Tap correction — this is what makes §7.1 safe |
+| `tag`, `note` | yes | No effect on formulas |
+| `walletId`, `toWalletId` | yes | Re-validated against §5.1 rules |
+| `at` / `dayKey` | yes, but not to the future | Changes which day is burdened |
+| `kind` | **no** | Changing `out` to `in` reverses the money direction and invalidates all integrity rules at once. Delete and recreate instead. |
+| `commitmentId` | **no** | Paid status is derived from it (§4.3); only the Pay flow may set it |
 
-Setiap penyuntingan menjalankan ulang seluruh validasi §5.1 dan memperbarui `updatedAt`. Menyunting entri hari lampau mengubah jatah hari ini — itu benar secara aritmetika, dan wajib dijelaskan lewat banner (§4.4).
+Every edit re-runs all §5.1 validations and updates `updatedAt`. Editing a past day's entry changes today's allowance — that is mathematically correct, and must be explained via banner (§4.4).
 
-Aturan terakhir penting: mengubah `dayStartHour` **wajib** memicu perhitungan ulang `dayKey` seluruh baris. Ini migrasi data, diperlakukan sebagai migrasi (§9.3).
+The last rule is important: changing `dayStartHour` **must** trigger a recalculation of `dayKey` across all rows. This is a data migration, treated as a migration (§9.3).
 
-### 5.2 Skema Dexie
+### 5.2 Dexie Schema
 
 ```js
 db.version(1).stores({
@@ -421,61 +421,61 @@ db.version(1).stores({
 })
 ```
 
-`toWalletId` **wajib diindeks.** Rumus saldo (§4.1) memuat `Σ(move → w)`, yang berarti mencari transaksi dengan `toWalletId == w`. Tanpa indeks, setiap perhitungan saldo per dompet memindai seluruh tabel. Skalanya memang kecil, tapi saldo dihitung ulang di setiap render angka jangkar — ini jalur terpanas di aplikasi.
+`toWalletId` **must be indexed.** Balance formulas (§4.1) contain `Σ(move → w)`, which means searching for transactions with `toWalletId == w`. Without an index, every balance calculation per wallet scans the entire table. The scale is small, but balance is recalculated on every anchor number render — this is the hottest path in the app.
 
-Uang disimpan sebagai **rupiah bulat dalam `number`**. Rupiah tidak punya satuan pecahan dalam praktik sehari-hari, dan `Number.MAX_SAFE_INTEGER` ≈ 9 kuadriliun — tidak ada risiko presisi pada skala keuangan pribadi. Tidak perlu BigInt, tidak perlu desimal.
+Money is stored as **integer rupiah in `number`**. Rupiah has no fractional units in daily practice, and `Number.MAX_SAFE_INTEGER` ≈ 9 quadrillion — there is no precision risk at personal finance scale. No need for BigInt, no need for decimals.
 
 ---
 
-## 6. Arsitektur
+## 6. Architecture
 
 ```
 src/
   lib/
-    domain/            ← fungsi murni. TIDAK BOLEH mengimpor db/svelte/capacitor.
+    domain/            ← pure functions. MUST NOT import db/svelte/capacitor.
       money.ts           formatRupiah, parseRupiah
-      day.ts             dayKeyOf, selisihHari, rentangHari
-      cycle.ts           cycleFor(tanggal, settings) → {start,end,panjang,sisaHari}
-      commitment.ts      jendelaKomitmen, sudahDibayar, komitmenBelumDibayar
-      allowance.ts       hitungJatah(input) → {jatah, terpakai, sisa, status}
-      runway.ts          hitungRunway(input) → {hari, perkiraan} | null
-      insight.ts         rasioImpuls, rincianTag, bandingMinggu, seriSparkline
+      day.ts             dayKeyOf, daysBetween, dateRange
+      cycle.ts           cycleFor(date, settings) → {start, end, length, daysRemaining}
+      commitment.ts      commitmentWindow, isPaid, unpaidCommitments
+      allowance.ts       computeAllowance(input) → {allowance, spent, remaining, status}
+      runway.ts          computeRunway(input) → {days, projection} | null
+      insight.ts         impulseRatio, tagBreakdown, weekComparison, sparklineSeries
       types.ts
     db/
       schema.ts
       repo/              transactions, wallets, commitments, settings
-      backup.ts          serialisasi, parsing, pratinjau
-    stores/            ← store Svelte: menyambungkan db ke domain
+      backup.ts          serialization, parsing, preview
+    stores/            ← Svelte stores: connecting db to domain
     notify/
-      Notifier.ts        antarmuka
-      capacitor.ts       implementasi asli
-      mock.ts            implementasi browser/uji
-    ui/                ← komponen
+      Notifier.ts        interface
+      capacitor.ts       native implementation
+      mock.ts            browser/test implementation
+    ui/                ← components
   routes/
-    +page.svelte         Catat (beranda)
+    +page.svelte         Record (home)
     sadar/+page.svelte
     riwayat/+page.svelte
     atur/+page.svelte
     mulai/+page.svelte   onboarding
 ```
 
-### 6.1 Kenapa `domain/` diisolasi total
+### 6.1 Why `domain/` is completely isolated
 
-`domain/` menerima masukan berupa data biasa (array angka dan objek polos) dan mengembalikan hasil berupa data biasa. Ia tidak tahu Dexie ada, tidak tahu Svelte ada, tidak tahu Android ada.
+`domain/` receives plain data as input (number arrays and plain objects) and returns plain data as results. It does not know Dexie exists, does not know Svelte exists, does not know Android exists.
 
-Konsekuensinya:
+Its consequences:
 
-1. **Seluruh kebenaran numerik bisa diuji dalam milidetik** dengan vitest, tanpa emulator, tanpa build APK, tanpa CI. Ini yang menyelamatkan siklus pengembangan di Termux.
-2. Bug angka hanya punya satu tempat bersembunyi. Kalau jatah harian salah, penyebabnya pasti di `domain/`, bukan di UI atau query.
-3. Aturan lint wajib: `domain/` tidak boleh punya `import` selain dari sesama `domain/`. Ditegakkan dengan `eslint-plugin-boundaries` atau satu tes yang memindai impor.
+1. **All numerical truth can be tested in milliseconds** with vitest, without emulators, without building APKs, without CI. This is what saved the development cycle on Termux.
+2. Number bugs have only one place to hide. If daily allowance is wrong, the cause is definitely in `domain/`, not in the UI or query.
+3. Mandatory lint rule: `domain/` must not have any `import` other than from fellow `domain/` modules. Enforced with `eslint-plugin-boundaries` or a single test scanning imports.
 
-Batas ini bukan hiasan arsitektur. Ini satu-satunya alasan aplikasi keuangan bisa dikembangkan dari HP tanpa toolchain berat.
+This boundary is not architectural decoration. It is the sole reason a financial application can be developed from a phone without heavy toolchains.
 
 ---
 
-## 7. Layar
+## 7. Screens
 
-### 7.1 Catat (beranda)
+### 7.1 Record (Home)
 
 ```
 ┌────────────────────────────────────┐
@@ -500,121 +500,121 @@ Batas ini bukan hiasan arsitektur. Ini satu-satunya alasan aplikasi keuangan bis
 └────────────────────────────────────┘
 ```
 
-**Gerakan inti: tombol niat adalah tombol simpan.** Ketik nominal → tap `IMPULSIF` → tersimpan. Niat menjadi wajib dengan **biaya nol tap tambahan**, dan tidak ada nilai default yang bisa diterima secara malas. Inilah yang membuat K1 (input cepat) dan K2 (niat wajib) tidak saling meniadakan.
+**Core gesture: the intent button is the save button.** Type amount → tap `IMPULSIF` → saved. Intent becomes mandatory with **zero extra tap cost**, and there is no default value that can be lazily accepted. This is what prevents K1 (fast input) and K2 (mandatory intent) from nullifying each other.
 
-**Baris aksi bersifat dinamis** — ini menutup lubang yang ditemukan review (§13.1, UX-01):
+**The action row is dynamic** — this closes a gap identified during review (§13.1, UX-01):
 
-| Mode | Baris aksi |
+| Mode | Action row |
 |---|---|
-| `KELUAR` (default) | Grid 2×2 empat niat |
-| `masuk` | Satu tombol lebar `SIMPAN PEMASUKAN` |
-| `pindah` | Pemilih dompet tujuan + `PINDAHKAN` |
+| `KELUAR` (default) | 2×2 grid of four intents |
+| `masuk` | One full-width button `SIMPAN PEMASUKAN` |
+| `pindah` | Destination wallet selector + `PINDAHKAN` |
 
-Grid 2×2 dipilih ketimbang empat tombol sebaris: target sentuhnya jauh lebih besar, sehingga justru **menurunkan** angka salah-tap dibanding tiga tombol sempit di desain awal.
+A 2×2 grid was chosen over four buttons in a single row: the touch targets are much larger, which actually **reduces** mis-taps compared to the three narrow buttons in the initial design.
 
-**Undo.** Setiap simpan memunculkan snackbar 5 detik dengan tombol batal. Entri terakhir juga tetap tampil dan bisa disentuh untuk diedit. Ini menjawab keberatan bahwa simpan-instan mahal saat salah tap (§13.1, UX-03): koreksi butuh satu tap, bukan empat.
+**Undo.** Every save displays a 5-second snackbar with a cancel button. The last entry also remains displayed and can be tapped to edit. This addresses the objection that instant-save is costly when mis-tapped (§13.1, UX-03): correction requires one tap, not four.
 
-**Chip tag** diambil dari 5 tag paling sering dipakai 30 hari terakhir untuk mode yang sedang aktif. Chip bersifat **pilih-satu**, bukan menumpuk: menyentuh chip kedua menggantikan yang pertama. Satu transaksi punya tepat satu tag atau tidak sama sekali (§5). Ini menjaga `rincian tag` bebas dari ambiguitas hitung-ganda, dan menjaga input tetap satu ketukan. Tag opsional dan tidak pernah menghalangi simpan.
+**Tag chips** are drawn from the 5 most frequently used tags over the last 30 days for the currently active mode. Chips are **single-select**, not stackable: tapping a second chip replaces the first. A single transaction has exactly one tag or none at all (§5). This keeps the `tag breakdown` free from double-counting ambiguity and keeps input to a single tap. Tags are optional and never block saving.
 
-**Catatan** disembunyikan di balik tautan kecil `+ catatan` di bawah baris tag. Ia tidak pernah tampil secara default, karena kolom teks bebas adalah musuh utama input cepat. Maksimal 200 karakter, bisa dicari lewat filter di Riwayat.
+**Notes** are hidden behind a small `+ catatan` link below the tag row. It never appears by default, because free-text fields are the primary enemy of fast input. Maximum 200 characters, searchable via filters in History.
 
-#### Melawan pembiasaan
+#### Combating habituation
 
-Ancaman terbesar aplikasi ini bukan salah hitung, melainkan **mata yang berhenti melihat**. Angka statis di posisi tetap akan berubah jadi latar belakang dalam dua sampai tiga minggu, persis seperti jam dinding. Kalau itu terjadi, aplikasi ini kembali jadi pencatat — tepat yang ingin dihindari (§13.2, P-01).
+The greatest threat to this app is not miscalculation, but **eyes that stop seeing**. Static numbers in a fixed position turn into background noise within two to three weeks, just like a wall clock. If that happens, this app degrades back into a passive recorder — precisely what must be avoided (§13.2, P-01).
 
-Tiga mekanisme wajib, bukan opsional:
+Three mandatory, non-optional mechanisms:
 
-1. **Angkanya berubah wujud, bukan cuma berubah digit.** Perlakuan visual mengikuti persentase jatah yang terpakai: tenang (0–60%), waspada (60–90%), mendesak (90–100%), terlampaui (>100%). Yang berubah adalah warna, bobot huruf, dan latar — perubahan bentuk tertangkap mata jauh lebih lama daripada perubahan angka.
+1. **Numbers change form, not just digits.** Visual styling follows the percentage of allowance spent: calm (0–60%), watchful (60–90%), urgent (90–100%), exceeded (>100%). What changes are colors, font weights, and backgrounds — structural changes hold visual attention far longer than digit changes.
 
-2. **Intervensi di detik keputusan.** Begitu nominal yang sedang diketik akan melewati sisa jatah, area tombol niat menampilkan baris peringatan **sebelum** disimpan: *"Ini akan melewati jatah Rp 12.500."* Inilah satu-satunya mekanisme di aplikasi ini yang bekerja pada saat keputusan masih bisa dibatalkan — sisanya bekerja setelah uang keluar. Ia tidak memblokir; ia hanya membuat pilihannya sadar.
+2. **Intervention at the moment of decision.** As soon as the amount being typed would exceed the remaining allowance, the intent button area displays a warning line **before** saving: *"Ini akan melewati jatah Rp 12.500."* This is the only mechanism in the app that operates while a decision can still be undone — the rest operate after money has already left. It does not block; it merely makes the choice conscious.
 
-3. **Konsekuensi masa depan dinyatakan, bukan disimpulkan sendiri.** Saat jatah terlampaui, tampilkan akibatnya secara langsung: *"Jatah besok turun jadi Rp 33.100."* Menyerahkan penarikan kesimpulan itu ke pemakai berarti tidak ada yang menariknya.
+3. **Future consequences are stated, not left to self-inference.** When the allowance is exceeded, display the consequence directly: *"Jatah besok turun jadi Rp 33.100."* Leaving that conclusion to the user means no one will draw it.
 
-**Batasan yang mengikat semua ini:** tidak ada nada menghakimi, tidak ada warna merah untuk niat, tidak ada streak atau lencana. Pemakai adalah pelabel sekaligus pihak yang dinilai — begitu sebuah label terasa menghukum, ia akan berhenti dipakai secara jujur, dan datanya mati (§13.2, P-02). Urutan tombol di grid 2×2 tidak boleh menyiratkan peringkat moral.
+**The constraint binding all of this:** no judgmental tone, no red color for intents, no streaks or badges. The user is both the labeler and the entity being judged — once a label feels punitive, it will cease to be used honestly, and data quality dies (§13.2, P-02). The button order in the 2×2 grid must not imply moral ranking.
 
-### 7.2 Sadar (dashboard)
+### 7.2 Sadar (Dashboard)
 
-Satu tap dari beranda. Berisi, berurutan dari paling menyadarkan:
+One tap from the home screen. Contains, ordered from most awareness-raising:
 
-1. **Rasio impuls** — cincin/bar CSS + kalimat konkret: *"Impuls bulan ini Rp 420.000 — setara 9 hari runway."*
-2. **Sparkline 28 hari** — SVG buatan sendiri (~30 baris), batang belanja harian dengan garis horizontal jatah. Tanpa library.
-3. **Banding minggu** — *"Minggu ini 23% lebih boros dari rata-rata 4 minggu."*
-4. **Sebaran niat** — empat bar bertumpuk.
-5. **Rincian tag** — 8 teratas.
-6. **Komitmen** — daftar tagihan dan target tabungan di siklus ini, dengan tombol Bayar dan penanda lunas.
-7. **Audit niat** — sekali per siklus, tampilkan 10 entri `RUTIN` bernilai terbesar dan tanyakan: *"Mana yang sebenarnya impulsif?"* Setiap baris bisa dipindahkan ke `IMPULSIF` dengan satu ketukan.
+1. **Impulse ratio** — CSS ring/bar + concrete statement: *"Impuls bulan ini Rp 420.000 — setara 9 hari runway."*
+2. **28-day sparkline** — Custom SVG (~30 lines), daily spend bars with allowance horizontal line. No libraries.
+3. **Weekly comparison** — *"Minggu ini 23% lebih boros dari rata-rata 4 minggu."*
+4. **Intent distribution** — four stacked bars.
+5. **Tag breakdown** — top 8.
+6. **Commitments** — list of bills and savings targets in this cycle, with a Pay button and paid marker.
+7. **Intent audit** — once per cycle, display top 10 highest-value `RUTIN` entries and ask: *"Mana yang sebenarnya impulsif?"* Each row can be moved to `IMPULSIF` with a single tap.
 
-Butir terakhir adalah satu-satunya pertahanan terhadap pembusukan data yang paling mungkin terjadi. Karena tombol niat merangkap tombol simpan, pemakai yang sedang buru-buru akan memilih label yang paling murah secara emosional, dan `RUTIN` adalah laci sampah yang sempurna: tanpa rasa bersalah, tanpa drama, tanpa kewajiban merencanakan. Tanpa audit, rasio impuls perlahan menuju nol sementara perilaku aslinya tidak berubah sama sekali (§13.2, P-02). Audit ini murah, dilakukan saat tidak terburu-buru, dan mengoreksi tepat pada arah bias yang diketahui.
+The last item is the sole defense against the most likely form of data decay. Because the intent button doubles as the save button, a rushed user will select the most emotionally cheap label, and `RUTIN` is the perfect junk drawer: guilt-free, drama-free, and free of planning obligations. Without an audit, the impulse ratio slowly trends toward zero while actual behavior remains completely unchanged (§13.2, P-02). This audit is cheap, performed when not rushed, and corrects precisely in the direction of the known bias.
 
-Semua grafik memakai SVG/CSS tanpa dependensi (D10). Library grafik dicoret setelah review menunjukkan CSS sudah cukup untuk semua bentuk visual di atas kecuali sparkline, dan sparkline itu 30 baris.
+All charts use SVG/CSS without dependencies (D10). Charting libraries were dropped after review showed CSS was sufficient for all visual forms above except the sparkline, and that sparkline takes 30 lines.
 
-### 7.3 Riwayat
+### 7.3 History
 
-Daftar dikelompokkan per hari dengan subtotal harian. Filter: rentang tanggal, niat, tag, dompet, dan isi catatan. Sentuh untuk edit sesuai aturan penyuntingan §5.1.1, geser **tidak** menghapus (aturan warisan v1 yang benar: geser-untuk-hapus terlarang di aplikasi keuangan).
+List grouped per day with daily subtotals. Filters: date range, intent, tag, wallet, and note content. Tap to edit according to editing rules in §5.1.1; swipe does **not** delete (the correct v1 legacy rule: swipe-to-delete is forbidden in financial applications).
 
-Tab **Trash** berisi entri terhapus dengan tombol pulihkan dan hapus permanen. Retensi tidak terbatas; tidak ada pembersihan otomatis — pembersihan otomatis di aplikasi keuangan adalah jalur kehilangan data.
+The **Trash** tab contains deleted entries with restore and permanent delete buttons. Retention is unlimited; there is no automatic cleanup — automatic cleanup in financial applications is a data loss pathway.
 
-### 7.4 Atur
+### 7.4 Settings
 
-Siklus (mode, tanggal jangkar, buffer akhir), dompet (tambah/arsip/urutkan, tandai reserve), komitmen, jam mulai hari, notifikasi (empat sakelar terpisah), ambang hapus besar, cadangan & ekspor/impor, versi aplikasi.
+Cycle (mode, anchor date, `endBuffer`), wallets (add/archive/reorder, mark `reserve`), commitments, `dayStartHour`, notifications (four separate toggles), `bigDeleteThreshold`, backup & export/import, app version.
 
-**Setiap pengaturan yang menggeser angka jangkar wajib menampilkan akibatnya sebelum disimpan**, bukan sesudah:
+**Every setting that shifts anchor numbers must display its consequences before saving**, not after:
 
-| Perubahan | Pratinjau yang wajib muncul |
+| Change | Mandatory preview |
 |---|---|
 | `endBuffer` | "Jatah harianmu akan turun dari Rp 60.000 ke Rp 30.000." |
-| Mode atau tanggal jangkar siklus | Tanggal akhir siklus baru + jatah harian barunya |
-| Menandai dompet jadi `reserve` | "Rp X keluar dari saldo belanja. Jatah turun ke Rp Y." |
-| Mengarsipkan dompet `spendable` | Ditolak bila saldonya bukan nol (§5.1); minta pindahkan dulu |
-| `dayStartHour` | Peringatan bahwa ini menghitung ulang seluruh `dayKey` (§9.3) |
+| Cycle mode or anchor date | New cycle end date + its new daily allowance |
+| Marking a wallet as `reserve` | "Rp X keluar dari saldo belanja. Jatah turun ke Rp Y." |
+| Archiving a `spendable` wallet | Rejected if balance is non-zero (§5.1); prompt to transfer first |
+| `dayStartHour` | Warning that this recalculates all `dayKey` entries (§9.3) |
 
-Pengaturan yang diam-diam membelah dua angka jangkar akan dibaca sebagai bug, dan kepercayaan pada angka itu tidak pulih setelahnya.
+A setting that silently halves anchor numbers will be perceived as a bug, and trust in those numbers will not recover afterward.
 
-**Sesuaikan saldo.** Seluruh matematika di dokumen ini berdiri di atas `saldoBelanja` yang benar, dan satu transaksi yang lupa dicatat membuat setiap angka melenceng diam-diam. Karena itu tiap dompet punya tindakan "sesuaikan saldo": pemakai memasukkan saldo sebenarnya, aplikasi membuat **transaksi koreksi yang terlihat** sebesar selisihnya (`in` atau `out`, `intent = 'routine'`, tag `#koreksi`).
+**sesuaikan saldo.** All mathematics in this document rests upon an accurate `spendableBalance`, and a single unrecorded transaction causes every number to drift silently. Therefore, each wallet has a "sesuaikan saldo" action: the user inputs their actual balance, and the app creates a **visible correction transaction** for the difference (`in` or `out`, `intent = 'routine'`, tag `#koreksi`).
 
-Aplikasi tidak pernah menimpa saldo secara diam-diam. Menulis ulang angka tanpa jejak akan merusak seluruh riwayat yang jadi dasar runway dan rata-rata harian — dan menyembunyikan dari pemakai bahwa ada uang yang tak terlacak, yaitu justru informasi yang paling perlu ia sadari.
+The app never overwrites balances silently. Rewriting numbers without a trace ruins the entire history that forms the basis for runway and daily averages — and hides untracked money from the user, which is precisely the information they most need to be aware of.
 
-### 7.5 Mulai (onboarding)
+### 7.5 Start (Onboarding)
 
-Tiga pertanyaan, satu layar per pertanyaan, semua bisa diubah nanti di Atur:
+Three questions, one screen per question, all editable later in Settings:
 
-1. **"Uangmu sekarang berapa?"** → membuat dompet `CASH` dengan `initialBalance`
+1. **"Uangmu sekarang berapa?"** → creates `CASH` wallet with `initialBalance`
 2. **"Sehari kira-kira habis berapa?"** → `seedDailySpend`
-3. **"Gajian tanggal berapa?"** — tiga jalur, karena penghasilan tidak selalu punya bentuk yang sama:
-   - Tanggal tetap tiap bulan → `monthly-day` + `cycleAnchorDay`
+3. **"Gajian tanggal berapa?"** — three paths, because income does not always take the same form:
+   - Fixed date each month → `monthly-day` + `cycleAnchorDay`
    - "Aku tahu tanggal masuk berikutnya, tapi tidak tetap" → `manual` + `cycleManualEnd`
    - "Tidak tentu" → `rolling`
 
-Lalu satu layar keempat yang meminta izin notifikasi dan menawarkan tautan langsung ke pengaturan optimasi baterai (§8.5).
+Then a fourth screen requesting notification permissions and offering a direct link to battery optimization settings (§8.5).
 
-Onboarding inilah yang membuat angka jangkar dan runway berfungsi sejak **hari pertama** meski database kosong (D9).
+This onboarding is what enables anchor numbers and runway to function from **day one** even with an empty database (D9).
 
 ---
 
-## 8. Notifikasi
+## 8. Notifications
 
-### 8.1 Katalog
+### 8.1 Catalog
 
-| Pemicu | Isi | Keandalan |
+| Trigger | Content | Reliability |
 |---|---|---|
-| Jatah terlampaui | "Jatah hari ini lewat Rp 12.500. Jatah besok turun jadi Rp 33.100." | **Tinggi** — foreground |
-| 20:00, belum ada catatan | "Belum ada catatan hari ini." | Sedang |
-| 21:00 harian | "Hari ini habis Rp 87.000. Jatah besok Rp 120.000." | Sedang |
-| Minggu 20:00 | "Minggu ini 23% lebih boros. Impuls Rp 210.000 = 4 hari runway." | Sedang |
+| Allowance exceeded | "Jatah hari ini lewat Rp 12.500. Jatah besok turun jadi Rp 33.100." | **High** — foreground |
+| 20:00, no records yet | "Belum ada catatan hari ini." | Medium |
+| 21:00 daily | "Hari ini habis Rp 87.000. Jatah besok Rp 120.000." | Medium |
+| Sunday 20:00 | "Minggu ini 23% lebih boros. Impuls Rp 210.000 = 4 hari runway." | Medium |
 
-Keempatnya bisa dimatikan satu per satu.
+All four can be turned off individually.
 
-### 8.2 Kendala teknis yang menentukan desain
+### 8.2 Technical constraints dictating design
 
-Notifikasi lokal Capacitor **dijadwalkan dengan teks tetap**. Tidak ada JavaScript yang berjalan saat notifikasi berbunyi. Artinya "hari ini habis Rp X" tidak bisa dihitung pada saat pemicuan.
+Capacitor local notifications are **scheduled with fixed text**. No JavaScript runs when a notification triggers. This means "spent Rp X today" cannot be calculated at trigger time.
 
-**Solusi: penjadwalan ulang saat setiap penulisan.** Setiap kali transaksi disimpan (di-debounce 5 detik), notifikasi ringkasan pukul 21:00 hari itu dijadwalkan ulang dengan angka terkini. Karena mencatat berarti membuka aplikasi, angkanya nyaris selalu mutakhir. Batasnya jujur: bila pemakai belanja pukul 20.55 dan mencatatnya pukul 22.00, ringkasan pukul 21:00 sudah basi. Ini diterima; alternatifnya adalah plugin background task yang menambah banyak kode dan justru lebih rapuh terhadap Doze.
+**Solution: rescheduling on every write.** Every time a transaction is saved (debounced by 5 seconds), the 21:00 summary notification for that day is rescheduled with the latest figures. Because recording implies opening the app, the numbers are almost always up to date. Its limitation is honest: if a user spends at 20:55 and records it at 22:00, the 21:00 summary is already stale. This is acceptable; the alternative is a background task plugin that adds significant code and is more fragile under Doze.
 
-Notifikasi **"belum ada catatan"** ditangani terbalik dan bersih: dijadwalkan saat hari dimulai, lalu **dibatalkan** begitu ada transaksi pertama hari itu.
+The **"belum ada catatan"** notification is handled cleanly in reverse: scheduled when the day starts, then **cancelled** as soon as the first transaction of that day occurs.
 
-Notifikasi mingguan dihitung dan dijadwalkan setiap aplikasi dibuka pada hari Sabtu atau Minggu.
+Weekly notifications are computed and scheduled every time the app is opened on Saturday or Sunday.
 
-### 8.3 Antarmuka `Notifier`
+### 8.3 `Notifier` Interface
 
 ```ts
 interface Notifier {
@@ -625,38 +625,38 @@ interface Notifier {
 }
 ```
 
-Dua implementasi: `capacitor.ts` (asli) dan `mock.ts` (browser dan uji, mencatat ke konsol). Dengan begitu **seluruh logika penjadwalan tetap bisa dikembangkan dan diuji di browser Termux** — hanya pengirimannya yang butuh build device. Ini mitigasi langsung terhadap kelemahan stack yang ditemukan review (§13.1, P-03).
+Two implementations: `capacitor.ts` (native) and `mock.ts` (browser and testing, logging to console). As a result, **the entire scheduling logic can be developed and tested in the Termux browser** — only actual delivery requires a device build. This is a direct mitigation against stack weaknesses identified during review (§13.1, P-03).
 
-### 8.4 Notifikasi bukan sumber kebenaran
+### 8.4 Notifications are not the source of truth
 
-Konsekuensi K3 yang wajib ditegakkan: **setiap notifikasi punya padanan di dalam aplikasi.** Beranda menampilkan banner "hari ini" berisi persis kalimat yang akan/sudah dikirim notifikasi. Bila OEM membunuh alarm terjadwal, siklus kesadarannya tidak putus — hanya jadi tarik (pull), bukan dorong (push).
+The mandatory consequence of K3 to enforce: **every notification has an in-app counterpart.** The home screen displays a "today" banner containing the exact sentence that will be / has been sent via notification. If an OEM kills scheduled alarms, the awareness loop remains unbroken — it simply becomes pull instead of push.
 
-### 8.5 Bertahan dari Doze dan OEM
+### 8.5 Surviving Doze and OEMs
 
-- Deklarasikan `SCHEDULE_EXACT_ALARM` / `USE_EXACT_ALARM`, jadwalkan sebagai alarm presisi.
-- Saat onboarding, tampilkan permintaan pengecualian optimasi baterai dengan tautan langsung ke pengaturan sistem.
-- Jadwalkan ulang seluruh notifikasi 7 hari ke depan setiap aplikasi dibuka, supaya pembatalan sepihak oleh sistem otomatis pulih.
-- Layar Atur menampilkan diagnostik: kapan notifikasi terakhir dijadwalkan, dan apakah pengecualian baterai aktif.
+- Declare `SCHEDULE_EXACT_ALARM` / `USE_EXACT_ALARM`, schedule as exact alarms.
+- During onboarding, present a battery optimization exemption request with a direct link to system settings.
+- Reschedule all notifications for the next 7 days every time the app is opened, ensuring unilateral cancellations by the OS recover automatically.
+- The Settings screen displays diagnostics: when the last notification was scheduled, and whether battery exemption is active.
 
-Xiaomi, Oppo, Vivo, dan Samsung tetap bisa membunuhnya. §8.4 adalah jaring pengaman, bukan pelengkap.
+Xiaomi, Oppo, Vivo, and Samsung can still kill them. §8.4 is a safety net, not an optional extra.
 
 ---
 
-## 9. Keamanan Data
+## 9. Data Security
 
-Aplikasi keuangan punya satu mode kegagalan yang tidak termaafkan: kehilangan catatan.
+Financial applications have one unforgivable failure mode: losing records.
 
-### 9.1 Ketahanan penyimpanan
+### 9.1 Storage durability
 
-IndexedDB di dalam WebView Capacitor bersifat privat-aplikasi dan jauh lebih tahan daripada penyimpanan browser biasa. Meski begitu, pertahanannya murah, jadi tidak perlu diperdebatkan:
+IndexedDB inside Capacitor's WebView is app-private and far more durable than standard browser storage. Even so, defense is cheap, so there is no reason to debate it:
 
-1. `navigator.storage.persist()` dipanggil saat peluncuran pertama.
-2. **Cadangan otomatis**: 30 detik setelah penulisan terakhir (debounce), tulis snapshot JSON penuh ke `Directory.Data/backups/latest.json` lewat Capacitor Filesystem.
-3. **Rotasi harian**: simpan 7 snapshot bertanggal.
-4. **Salinan mingguan** ke `Directory.Documents/MalasFinance/` supaya terlihat pemakai dan bisa disalin keluar. Bersifat *best-effort* — tunduk pada scoped storage Android.
-5. Layar Atur menampilkan **kapan cadangan terakhir berhasil**. Bila lebih dari 3 hari, tampilkan peringatan.
+1. `navigator.storage.persist()` is called on first launch.
+2. **Automatic backups**: 30 seconds after the last write (debounced), write a full JSON snapshot to `Directory.Data/backups/latest.json` via Capacitor Filesystem.
+3. **Daily rotation**: store 7 dated snapshots.
+4. **Weekly copies** to `Directory.Documents/MalasFinance/` so they are visible to the user and can be copied externally. This is *best-effort* — subject to Android scoped storage.
+5. The Settings screen displays **when the last backup succeeded**. If longer than 3 days, display a warning.
 
-**Format berkas cadangan.** Amplopnya wajib membawa versi skemanya sendiri. Tanpa penanda versi di dalam berkas, impor lintas-versi mustahil dilakukan dengan aman — kode impor tidak punya cara untuk tahu bentuk apa yang sedang ia baca, bahkan tidak tahu bahwa ia perlu memberi nilai bawaan.
+**Backup file format.** The envelope must carry its own schema version. Without an in-file version marker, cross-version import is impossible to perform safely — the import code has no way of knowing what structure it is reading, or even whether default values are required.
 
 ```json
 {
@@ -671,257 +671,257 @@ IndexedDB di dalam WebView Capacitor bersifat privat-aplikasi dan jauh lebih tah
 }
 ```
 
-Impor membaca `schemaVersion` lebih dulu, menjalankan migrasi maju bila perlu, baru menulis. `schemaVersion` lebih besar dari yang dikenal aplikasi → tolak dengan pesan jelas ("cadangan ini dari versi aplikasi yang lebih baru"), **jangan** coba dibaca sebagian. Transaksi terhapus ikut disertakan lengkap dengan `deletedAt`-nya, karena ini cadangan penuh, bukan ekspor laporan.
+Import reads `schemaVersion` first, runs forward migrations if necessary, and only then writes. If `schemaVersion` is higher than what the app recognizes → reject with a clear message ("cadangan ini dari versi aplikasi yang lebih baru"), do **not** attempt partial reading. Deleted transactions are included along with their `deletedAt` timestamps, as this is a full backup, not a report export.
 
-Cadangan otomatis masuk **Fase 1**, bukan fase akhir. Meluncurkan input data sebelum ada cadangan adalah kesalahan urutan yang ditemukan review (§13.1, S-01).
+Automatic backups belong in **Phase 1**, not the final phase. Launching data entry before backups exist is an ordering mistake identified during review (§13.1, S-01).
 
-### 9.2 Impor selalu pratinjau dulu
+### 9.2 Import always previews first
 
-Diwarisi dari `next-spec.md` ITEM-3 karena memang benar. Alur: pilih berkas → parse → **pratinjau** → konfirmasi.
+Inherited from `next-spec.md` ITEM-3 because it is correct. Flow: select file → parse → **preview** → confirm.
 
-Pratinjau menampilkan: jumlah entri, rentang tanggal, total masuk, total keluar, dompet baru yang akan dibuat, dan komitmen baru yang akan dibuat.
+The preview displays: entry count, date range, total in, total out, new wallets to be created, and new commitments to be created.
 
-Dua mode:
+Two modes:
 
-| Mode | Perilaku | Konfirmasi |
+| Mode | Behavior | Confirmation |
 |---|---|---|
-| **Gabung** | Semua entri mendapat `id` baru; tidak ada dedup | Tombol `<n> ENTRI — IMPOR` |
-| **Ganti total** | Basis data dikosongkan lalu diisi | **Ketik `GANTI`** untuk konfirmasi |
+| **Merge** | All entries receive a new `id`; no dedup | Button `<n> ENTRI — IMPOR` |
+| **Full replace** | Database is cleared then populated | **Type `GANTI`** to confirm |
 
-Berkas rusak, JSON tidak valid, atau nol entri valid → *"Tidak ada entri yang bisa dibaca — berkas mungkin rusak"*, bukan sukses diam-diam.
+Corrupted file, invalid JSON, or zero valid entries → *"Tidak ada entri yang bisa dibaca — berkas mungkin rusak"*, not silent success.
 
-### 9.3 Migrasi
+### 9.3 Migration
 
-- Perubahan skema Dexie **wajib** punya fungsi upgrade eksplisit.
-- Tidak ada padanan `fallbackToDestructiveMigration()`. Bila upgrade gagal, aplikasi menolak jalan dan menawarkan ekspor, **bukan** menghapus.
-- Mengubah `dayStartHour` diperlakukan sebagai migrasi: hitung ulang `dayKey` seluruh baris di dalam satu transaksi, dengan cadangan otomatis dipicu lebih dulu.
+- Dexie schema changes **must** have explicit upgrade functions.
+- There is no equivalent of `fallbackToDestructiveMigration()`. If an upgrade fails, the app refuses to run and offers an export, **not** deletion.
+- Changing `dayStartHour` is treated as a migration: recalculate `dayKey` for all rows within a single transaction, with an automatic backup triggered first.
 
-### 9.4 Penghapusan
+### 9.4 Deletion
 
-- Hapus → trash (`deletedAt`), selalu bisa dipulihkan.
-- Tidak ada geser-untuk-hapus.
-- Hapus permanen entri dengan `amount ≥ bigDeleteThreshold` (default Rp 1.000.000) butuh **konfirmasi ketik**.
-- Mengosongkan seluruh trash butuh konfirmasi ketik tanpa memandang jumlah.
-- Dompet yang masih dirujuk transaksi aktif tidak bisa dihapus — hanya diarsipkan.
+- Delete → trash (`deletedAt`), always recoverable.
+- No swipe-to-delete.
+- Permanently deleting an entry with `amount ≥ bigDeleteThreshold` (default Rp 1.000.000) requires **typed confirmation**.
+- Emptying the entire trash requires typed confirmation regardless of the amount.
+- Wallets still referenced by active transactions cannot be deleted — only archived.
 
 ---
 
-## 10. Pengujian
+## 10. Testing
 
-### 10.1 Domain (mayoritas, vitest, tanpa emulator)
+### 10.1 Domain (majority, vitest, no emulator)
 
-Daftar kasus yang **wajib** ada, karena masing-masing mewakili cara aplikasi ini bisa berbohong:
+List of cases that **must** exist, because each represents a way this application can lie:
 
 **`cycle.ts`**
-- `cycleAnchorDay = 31` di Februari (28 dan 29 hari)
-- `cycleAnchorDay = 30` di Februari
-- Hari terakhir siklus → `sisaHari === 1`, tidak pernah 0
-- Mode `manual` yang tanggalnya sudah lewat → `cycle-expired`, jatuh ke perilaku `rolling`
-- Pergantian tahun
+- `cycleAnchorDay = 31` in February (28 and 29 days)
+- `cycleAnchorDay = 30` in February
+- Last day of cycle → `daysRemaining === 1`, never 0
+- `manual` mode whose date has passed → `cycle-expired`, falls back to `rolling` behavior
+- Year transition
 
 **`allowance.ts`**
-- Belanja hari ini tidak dihitung dua kali: `jatahHariIni` stabil terhadap pengeluaran diskresioner
-- Pemasukan di tengah hari **menaikkan** `jatahHariIni` seketika (perilaku yang disengaja, dikunci lewat tes)
-- Boros hari ini → `jatahHariIni` besok turun
-- Komitmen belum dibayar mengurangi jatah sejak hari pertama siklus
-- Komitmen dibayar di tengah siklus tidak menimbulkan lonjakan maupun tebing
-- Komitmen `saving` dibayar lewat `move` ke `reserve` **tidak** mengubah jatah
-- `danaTersedia ≤ 0` → jatah 0 dan status `minus`, bukan angka negatif
-- `endBuffer` lebih besar dari saldo
-- Dompet `reserve` tidak ikut `saldoBelanja`
-- Nol dompet spendable
-- Transaksi bertanggal masa depan ditolak (§5.1) sehingga tidak pernah mencapai rumus ini
+- Today's spend is not double-counted: `allowanceToday` is stable against discretionary spend
+- Mid-day income **increases** `allowanceToday` immediately (intentional behavior, locked via test)
+- Overspending today → tomorrow's `allowanceToday` decreases
+- Unpaid commitments reduce allowance from the first day of the cycle
+- Commitments paid mid-cycle create neither spikes nor cliffs
+- `saving` commitment paid via `move` to `reserve` **does not** change allowance
+- `availableFunds ≤ 0` → allowance 0 and `minus` status, not a negative number
+- `endBuffer` larger than balance
+- `reserve` wallet is not part of `spendableBalance`
+- Zero spendable wallets
+- Future-dated transactions rejected (§5.1) so they never reach this formula
 
 **`commitment.ts`**
-- Komitmen lewat jatuh tempo tapi belum dibayar **tetap** terhitung — lupa bayar tidak boleh menaikkan jatah
-- Membayar komitmen membuatnya lunas; menghapus pembayaran ke trash membuatnya **kembali** belum lunas
-- Memulihkan pembayaran dari trash membuatnya lunas lagi
-- Tombol Bayar idempoten: komitmen yang sudah lunas tidak bisa dibayar dua kali
-- Jendela `[awalBulanIni, cycleEnd]` berperilaku benar di ketiga mode siklus, termasuk `rolling`
-- `dueDay = 31` di bulan pendek dijepit ke hari terakhir
-- Komitmen dibuat di tengah siklus langsung terhitung bila jatuh temponya masih di jendela
-- `amount` melebihi saldo → kondisi minus, bukan error
+- Overdue but unpaid commitments **still** count — forgetting to pay must not increase allowance
+- Paying a commitment marks it paid; deleting payment to trash makes it unpaid **again**
+- Restoring payment from trash marks it paid again
+- Pay button is idempotent: an already paid commitment cannot be paid twice
+- Window `[startOfMonth, cycleEnd]` behaves correctly across all three cycle modes, including `rolling`
+- `dueDay = 31` in short months is clamped to the last day
+- Commitment created mid-cycle counts immediately if its due date is still within the window
+- `amount` exceeds balance → minus condition, not an error
 
 **`runway.ts`**
-- Nol hari data → seed murni, ditandai `perkiraan`, dan hasilnya **bukan `NaN`**
-- Hari ke-7 → campuran seed dan aktual
-- Hari ke-14 dan ke-15 → seed berbobot nol
-- Nol belanja dan nol komitmen → `null`, bukan `Infinity`
-- Hari tanpa belanja dihitung sebagai 0, bukan dilewati
-- **Hari ini tidak masuk jendela rata-rata** — runway tidak berubah saat transaksi hari ini disimpan
-- Pembayaran komitmen tidak mencemari rata-rata diskresioner
+- Zero days of data → pure seed, marked `"perkiraan"`, and the result is **not `NaN`**
+- Day 7 → mix of seed and actual
+- Days 14 and 15 → zero-weighted seed
+- Zero spend and zero commitments → `null`, not `Infinity`
+- Days without spending counted as 0, not skipped
+- **Today is excluded from the average window** — runway does not change when today's transaction is saved
+- Commitment payments do not pollute discretionary average
 
 **`day.ts`**
-- `selisihHari(x, x) === 0` — dikunci lewat tes karena setiap rumus siklus bergantung padanya
-- `dayStartHour = 3`: transaksi pukul 01:30 masuk `dayKey` kemarin
-- Pergantian bulan dan tahun
-- Konsistensi saat perangkat berpindah zona waktu
+- `daysBetween(x, x) === 0` — locked via test because every cycle formula depends on it
+- `dayStartHour = 3`: transaction at 01:30 falls into yesterday's `dayKey`
+- Month and year transition
+- Consistency when device changes time zones
 
 **`insight.ts`**
-- Rasio impuls dengan penyebut nol
-- Rasio impuls mengecualikan pembayaran komitmen dari penyebut
-- Rasio impuls memakai rentang siklus berjalan, bukan bulan kalender
-- Banding minggu saat data kurang dari 4 minggu
-- Banding minggu saat `rata4Minggu == 0` → "belum cukup data", bukan pembagian nol
-- Tidak ada satu pun metrik yang bisa mengembalikan `NaN` atau `Infinity` untuk basis data kosong
+- Impulse ratio with zero denominator
+- Impulse ratio excludes commitment payments from the denominator
+- Impulse ratio uses current cycle range, not calendar month
+- Week comparison when data is less than 4 weeks
+- Week comparison when `average4Weeks == 0` → "belum cukup data", not division by zero
+- Not a single metric can return `NaN` or `Infinity` for an empty database
 
 ### 10.2 Repository (`fake-indexeddb`)
 
-Setiap aturan integritas di §5.1 punya satu tes yang membuktikan penulisan ditolak — termasuk penolakan tanggal masa depan dan penolakan mengarsipkan dompet `spendable` bersaldo. Ditambah: siklus soft-delete/pulihkan, penghapusan dompet yang masih dirujuk, setiap aturan penyuntingan §5.1.1 (khususnya `kind` dan `commitmentId` yang tidak boleh berubah), dan idempotensi tombol Bayar.
+Every integrity rule in §5.1 has a test proving write rejection — including future-date rejection and rejecting the archiving of a `spendable` wallet with a balance. Plus: soft-delete/restore cycle, deletion of a wallet that is still referenced, every editing rule in §5.1.1 (specifically `kind` and `commitmentId` which must not change), and the idempotency of the Pay button.
 
-### 10.3 Cadangan dan impor
+### 10.3 Backup and import
 
-Bolak-balik serialisasi, JSON rusak, berkas kosong, `id` duplikat, dompet tak dikenal, angka pratinjau cocok dengan hasil impor. Ditambah: berkas tanpa `schemaVersion` ditolak, `schemaVersion` lebih tinggi dari yang dikenal ditolak dengan pesan jelas, dan transaksi terhapus ikut terbawa lengkap dengan `deletedAt`-nya.
+Serialization round-trip, corrupted JSON, empty file, duplicate `id`, unknown wallet, preview figures match import results. Plus: files without `schemaVersion` rejected, `schemaVersion` higher than known rejected with a clear message, and deleted transactions included complete with their `deletedAt`.
 
-### 10.4 Yang tidak diuji
+### 10.4 What is not tested
 
-Tidak ada uji E2E maupun screenshot. Aplikasi satu pemakai, dan biaya perawatannya melebihi manfaatnya. Verifikasi UI dilakukan manual di browser. Ini keputusan sadar, bukan kelalaian.
+There are no E2E tests or screenshots. Single-user app, and maintenance costs outweigh the benefits. UI verification is done manually in the browser. This is a conscious decision, not negligence.
 
 ---
 
-## 11. Build dan Rilis
+## 11. Build and Release
 
-### 11.1 Siklus pengembangan
+### 11.1 Development cycle
 
 ```
-npm run dev     → server Vite, dibuka di browser HP. Fitur native memakai mock.
-npm run test    → vitest, milidetik
-npm run build   → aset statis
-npx cap sync android && ./gradlew assembleRelease   → hanya di CI
+npm run dev     → Vite server, opened in phone browser. Native features use mocks.
+npm run test    → vitest, milliseconds
+npm run build   → static assets
+npx cap sync android && ./gradlew assembleRelease   → CI only
 ```
 
-**Batas yang harus dinyatakan terang-terangan:** fitur native — notifikasi, Filesystem — **tidak bisa diuji di browser**. Fase 3 kehilangan dev loop instan dan kembali bergantung pada build device. Antarmuka `Notifier` (§8.3) memperkecil kerugiannya dengan membuat logika penjadwalan tetap teruji di browser, tapi pengiriman sesungguhnya tetap butuh APK.
+**Boundaries that must be stated explicitly:** native features — notifications, Filesystem — **cannot be tested in the browser**. Phase 3 loses the instant dev loop and falls back to relying on device builds. The `Notifier` interface (§8.3) minimizes the drawback by keeping scheduling logic testable in the browser, but actual delivery still requires an APK.
 
 ### 11.2 Termux
 
-Halangan nyata yang perlu diakali sekali di awal:
+Real obstacles that need to be worked around once at the start:
 
-- **Phantom process killer** (Android 12+) membunuh proses anak Termux. Nonaktifkan lewat `settings put global settings_enable_monitor_phantom_procs false` (butuh adb/Shizuku), atau terima restart sesekali.
-- **`termux-wake-lock`** sebelum sesi panjang.
-- **File watching** lewat inotify bisa meleset di storage Android. Bila terjadi, aktifkan `server.watch.usePolling` di `vite.config.ts` — dengan konsekuensi baterai lebih boros.
+- **Phantom process killer** (Android 12+) kills Termux child processes. Disable via `settings put global settings_enable_monitor_phantom_procs false` (requires adb/Shizuku), or accept occasional restarts.
+- **`termux-wake-lock`** before long sessions.
+- **File watching** via inotify can miss events on Android storage. If this happens, enable `server.watch.usePolling` in `vite.config.ts` — with the consequence of higher battery usage.
 
-### 11.3 CI dan rilis
+### 11.3 CI and release
 
-- Pemicu: perubahan yang mempengaruhi APK saja, sama seperti v1.
-- Langkah: `npm ci` → `npm test` → `npm run build` → `cap sync` → `assembleRelease` → tanda tangan → rilis.
-- **Keystore dan password wajib berasal dari GitHub Secrets.** Repo v2 tidak boleh memuat `.keystore`, `.base64`, atau password dalam bentuk apa pun. Ini utang yang tidak lunas di v1 dan tidak boleh diwarisi.
-- Tag `v<versi>-b<build>`, APK `MalasFinance-v<versi>-b<build>.apk`, catatan rilis berisi SHA commit dan changelog sejak tag sebelumnya.
-- **Versi bersumber tunggal** dari `package.json`, disuntikkan lewat `define` Vite, ditampilkan di layar Atur. Tidak ada string versi yang ditulis tangan di mana pun — ini menutup penyakit menahun v1 (drift tiga arah antara build.gradle, README, dan UI).
-
----
-
-## 12. Fase Implementasi
-
-| Fase | Isi | Selesai bila |
-|---|---|---|
-| **1 — Fondasi** | Model data, Dexie, repository + aturan integritas (§5.1, §5.1.1), `domain/` lengkap dengan tesnya, onboarding, layar Catat, angka jangkar, mekanisme anti-pembiasaan (§7.1), komitmen `bill` + `saving`, sesuaikan saldo, trash, **cadangan otomatis** | Bisa mencatat sehari penuh dan angkanya benar; data selamat dari uninstall-reinstall lewat cadangan |
-| **2 — Sadar** | Dashboard, sparkline SVG, rasio impuls, rincian tag, banding minggu, audit niat, layar Riwayat dengan filter | Semua metrik §4.7 tampil dan cocok dengan hitungan manual |
-| **3 — Suara** | `Notifier`, penjadwalan, penjadwalan ulang saat tulis, banner dalam aplikasi, permintaan pengecualian baterai | Empat notifikasi terkirim di perangkat nyata; mematikan notifikasi tidak merusak apa pun |
-| **4 — Rilis** | Ekspor/impor lengkap dengan pratinjau, ekspor Markdown, pipeline APK, GitHub Secrets | APK bertanda tangan terbit dari CI; impor bolak-balik menghasilkan data identik |
-
-Cadangan otomatis sengaja diletakkan di Fase 1, bukan Fase 4.
+- Trigger: changes affecting the APK only, same as v1.
+- Steps: `npm ci` → `npm test` → `npm run build` → `cap sync` → `assembleRelease` → sign → release.
+- **Keystore and passwords must originate from GitHub Secrets.** The v2 repo must not contain `.keystore`, `.base64`, or passwords in any form. This is technical debt from v1 and must not be inherited.
+- Tag `v<version>-b<build>`, APK `MalasFinance-v<version>-b<build>.apk`, release notes containing commit SHA and changelog since previous tag.
+- **Single-source version** from `package.json`, injected via Vite `define`, displayed on the Settings screen. No handwritten version strings anywhere — this eliminates v1's chronic issue (three-way drift between build.gradle, README, and UI).
 
 ---
 
-## 13. Review Adversarial dan Penyelesaiannya
+## 12. Implementation Phases
 
-Desain ini melewati **dua ronde** review adversarial dengan model berbeda sebelum dibekukan. Ronde 1 menyerang desain awal; ronde 2 menyerang dokumen hasil revisinya dan dilarang mengulang temuan ronde 1.
-
-### 13.1 Ronde 1 — `gemini-3.6-flash-high`
-
-Tiga belas temuan; dua belas diterima seluruhnya atau sebagian, satu ditolak.
-
-| ID | Temuan | Penyelesaian |
+| Phase | Contents | Complete when |
 |---|---|---|
-| **M-01** | Pembagian nol di hari terakhir siklus | Jepitan `max(1, sisaHari)` (§4.2); kondisi minus dispesifikasikan eksplisit (§4.4) |
-| **M-02** | Jatah harian mengabaikan tagihan tetap yang belum jatuh tempo — **angka jangkar berbohong setiap hari** | Entitas `Commitment` ditambahkan; `komitmenBelumDibayar` dikurangkan dari dana tersedia (§4.3, §4.4) |
-| **M-03** | Membuang 2 hari terboros justru menyembunyikan sewa dan listrik | Trimming dihapus total; runway kini dihitung atas belanja diskresioner dengan komitmen eksplisit (§4.5) |
-| **P-01** | Penggusuran IndexedDB oleh Android | Klaim tentang OEM mengabaikan `persist()` tidak terverifikasi dan diragukan, tapi pertahanannya murah: cadangan otomatis naik ke Fase 1 (§9.1) |
-| **UX-01** | Tombol niat sebagai tombol simpan tidak menyediakan jalan untuk pemasukan dan pindah dompet | Baris aksi dibuat dinamis per mode (§7.1) |
-| **P-02** | Doze dan OEM mematikan notifikasi terjadwal | Diterima untuk yang terjadwal; alert ambang berjalan di foreground dan tetap andal. Prinsip §8.4 ditambahkan: setiap notifikasi punya padanan dalam aplikasi |
-| **CS-01** | Membuang seluruh data sementara metrik butuh 28 hari data | Seed lewat onboarding dengan peluruhan bobot 14 hari (§4.5, §7.5). Keputusan buang-data tetap berlaku |
-| **UX-02** | Taksonomi tidak punya tempat untuk pengeluaran darurat; memaksanya jadi impulsif merusak metrik dan menimbulkan rasa bersalah palsu | Niat keempat `emergency` ditambahkan; tata letak jadi grid 2×2 (§7.1) |
-| **P-03** | Termux: phantom process killer, inotify, dan fitur native tak bisa diuji di browser | Diakui terang-terangan (§11.1, §11.2); antarmuka `Notifier` memperkecil dampaknya (§8.3) |
-| **UX-03** | Simpan-instan tanpa undo mahal saat salah tap | Snackbar undo 5 detik + entri terakhir bisa disentuh; grid 2×2 memperbesar target sentuh (§7.1) |
-| **S-01** | Cadangan diletakkan di Fase 4 sementara input diluncurkan di Fase 1 | Cadangan otomatis dipindah ke Fase 1 (§9.1, §12) |
-| **YAGNI** | Library grafik uPlot berlebihan | **Diterima** — dicoret; SVG/CSS manual (§7.2, D10) |
-| **YAGNI** | Multi-dompet dengan `move` disebut "kerumitan skema tanpa manfaat" | **Ditolak.** `move` diperlukan agar saldo per dompet benar, dan pemisahan dompet `reserve` justru yang membuat `saldoBelanja` tidak menghitung tabungan. Tanpanya angka jangkar rusak. |
+| **1 — Foundation** | Data model, Dexie, repository + integrity rules (§5.1, §5.1.1), `domain/` complete with tests, onboarding, Record screen, anchor numbers, anti-habituation mechanisms (§7.1), `bill` + `saving` commitments, "sesuaikan saldo", trash, **automatic backup** | Can log a full day and numbers are correct; data survives uninstall-reinstall via backup |
+| **2 — Sadar** | Dashboard, SVG sparkline, impulse ratio, tag breakdown, week comparison, intent audit, History screen with filters | All §4.7 metrics displayed and match manual calculation |
+| **3 — Voice** | `Notifier`, scheduling, rescheduling on write, in-app banner, battery exception request | Four notifications delivered on real device; disabling notifications breaks nothing |
+| **4 — Release** | Full export/import with preview, Markdown export, APK pipeline, GitHub Secrets | Signed APK published from CI; round-trip import produces identical data |
 
-### 13.2 Ronde 2 — `claude-opus-4-6-thinking`
+Automatic backup is deliberately placed in Phase 1, not Phase 4.
 
-Dua puluh empat temuan, nol pengulangan dari ronde 1. Semuanya diterima; tiga di antaranya diselesaikan dengan cara **berbeda dan lebih kuat** daripada yang diusulkan.
+---
 
-> Penomoran kedua ronde berdiri sendiri dan **bertabrakan**: `P-01` di §13.1 berarti penggusuran IndexedDB, sementara `P-01` di §13.2 berarti pembiasaan. Setiap rujukan di dokumen ini karena itu selalu menyebut nomor ronde-nya.
+## 13. Adversarial Review and Resolutions
 
-**Satu perubahan struktural mematikan tiga temuan sekaligus.** C-01 (tulis-ganda tanpa atomisitas), H-01 (tidak ada sinkronisasi balik saat pembayaran dihapus), dan H-10 (`cycleKey` mustahil didefinisikan untuk mode `manual` dan `rolling`) semuanya berakar pada satu keputusan: menyimpan status lunas di `paidCycles`. Menurunkannya dari transaksi (§4.3) menghapus ketiganya sekaligus, dan menghasilkan kode yang lebih sedikit — bukan lebih banyak.
+This design underwent **two rounds** of adversarial review with different models before being frozen. Round 1 attacked the initial design; Round 2 attacked the revised document and was forbidden from repeating Round 1 findings.
 
-| ID | Tingkat | Temuan | Penyelesaian |
+### 13.1 Round 1 — `gemini-3.6-flash-high`
+
+Thirteen findings; twelve accepted in full or in part, one rejected.
+
+| ID | Finding | Resolution |
+|---|---|---|
+| **M-01** | Division by zero on the last day of cycle | Clamping `max(1, daysRemaining)` (§4.2); minus condition specified explicitly (§4.4) |
+| **M-02** | Daily allowance ignores unpaid fixed bills — **anchor number lies every day** | `Commitment` entity added; `unpaidCommitments` subtracted from available funds (§4.3, §4.4) |
+| **M-03** | Trimming the 2 highest spend days actually hides rent and electricity | Trimming completely removed; runway now calculated on discretionary spend with explicit commitments (§4.5) |
+| **P-01** | IndexedDB eviction by Android | Claim about OEMs ignoring `persist()` unverified and doubtful, but defense is cheap: automatic backup moved up to Phase 1 (§9.1) |
+| **UX-01** | Intent buttons as save buttons provide no path for income and wallet moves | Action row made dynamic per mode (§7.1) |
+| **P-02** | Doze and OEMs kill scheduled notifications | Accepted for scheduled ones; threshold alerts run in foreground and remain reliable. Principle §8.4 added: every notification has an in-app counterpart |
+| **CS-01** | Discarding all data while metrics need 28 days of data | Seed via onboarding with 14-day weight decay (§4.5, §7.5). Data-discard decision stands |
+| **UX-02** | Taxonomy has no place for emergency expenses; forcing them to be impulsive ruins metrics and causes false guilt | Fourth intent `emergency` added; layout becomes 2×2 grid (§7.1) |
+| **P-03** | Termux: phantom process killer, inotify, and native features cannot be tested in browser | Acknowledged openly (§11.1, §11.2); `Notifier` interface minimizes impact (§8.3) |
+| **UX-03** | Instant-save without undo is costly on mis-taps | 5-second undo snackbar + last entry tappable; 2×2 grid enlarges touch targets (§7.1) |
+| **S-01** | Backup placed in Phase 4 while input launches in Phase 1 | Automatic backup moved to Phase 1 (§9.1, §12) |
+| **YAGNI** | uPlot charting library is overkill | **Accepted** — struck out; manual SVG/CSS (§7.2, D10) |
+| **YAGNI** | Multi-wallet with `move` called "schema complexity without benefit" | **Rejected.** `move` is required for correct per-wallet balance, and separating `reserve` wallets is precisely what keeps `spendableBalance` from counting savings. Without it the anchor number breaks. |
+
+### 13.2 Round 2 — `claude-opus-4-6-thinking`
+
+Twenty-four findings, zero repetitions from Round 1. All accepted; three resolved in a **different and stronger** way than proposed.
+
+> The numbering for both rounds is independent and **collides**: `P-01` in §13.1 means IndexedDB eviction, while `P-01` in §13.2 means habituation. Every reference in this document therefore always specifies its round number.
+
+**A single structural change kills three findings at once.** C-01 (double-write without atomicity), H-01 (no back-sync when payment is deleted), and H-10 (`cycleKey` impossible to define for `manual` and `rolling` modes) all stemmed from one decision: storing paid status in `paidCycles`. Deriving it from transactions (§4.3) removes all three at once, producing less code — not more.
+
+| ID | Severity | Finding | Resolution |
 |---|---|---|---|
-| **C-01** | Kritis | Tombol Bayar menulis ke dua tabel tanpa atomisitas; gagal di tengah → komitmen dipotong dua kali | `paidCycles` dihapus; status lunas diturunkan dari transaksi (§4.3). Satu penulisan, tidak ada jendela rusak. |
-| **H-01** | Kritis | Menghapus pembayaran ke trash tidak mengembalikan status belum-lunas | Hilang dengan sendirinya oleh perubahan yang sama — `sudahDibayar` adalah query atas transaksi aktif (§4.3) |
-| **H-10** | Tinggi | `cycleKey` dipakai tapi tidak pernah didefinisikan; mustahil untuk `manual` dan `rolling` | Tidak ada lagi `cycleKey`. Jendela komitmen jadi satu aturan tunggal `[awalBulanIni, cycleEnd]` (§4.3) |
-| **H-02** | Tinggi | Tagihan lewat jatuh tempo yang belum dibayar hilang dari hitungan — lupa bayar justru **menaikkan** jatah | Batas bawah jendela diubah dari `hariIni` ke `awalBulanIni` (§4.3) |
-| **C-02** | Tinggi | Klaim "jatah stabil sepanjang hari" keliru — pemasukan di tengah hari mengubahnya | Klaim dikoreksi jadi "stabil terhadap pengeluaran diskresioner", dengan tabel eksplisit kejadian mana yang mengubah jatah dan mana yang tidak (§4.4) |
-| **C-03** | Tinggi | Pindah ke `reserve` menurunkan jatah — aplikasi menghukum menabung | **Cara berbeda:** menabung dimodelkan sebagai komitmen `kind: 'saving'` sehingga terpotong di muka. Memindahkan uang jadi tidak mengubah jatah sama sekali. Nol konsep baru. (§4.3) |
-| **C-04** | Tinggi | Mengedit riwayat lama menggeser jatah hari ini tanpa penjelasan | Banner sekali-lewat di layar Catat (§4.4) |
-| **C-05** | Sedang | Transaksi bertanggal masa depan menggerus jatah tanpa dikembalikan | Tanggal masa depan ditolak di lapisan repository — satu aturan mematikan seluruh kelas bug (§5.1) |
-| **C-06** | Sedang | Mengarsipkan dompet menurunkan jatah diam-diam | **Cara berbeda:** bukan sekadar dialog peringatan — mengarsipkan dompet `spendable` bersaldo **ditolak**, dananya harus dipindahkan dulu (§5.1) |
-| **C-07** | Sedang | Mengubah `endBuffer` menurunkan jatah diam-diam | Pratinjau wajib sebelum simpan, untuk semua pengaturan yang menggeser jatah (§7.4) |
-| **P-01** | Tinggi | Angka statis jadi hiasan dinding dalam ~3 minggu | Tiga mekanisme anti-pembiasaan, termasuk intervensi di detik keputusan sebelum uang keluar (§7.1) |
-| **P-02** | Sedang | Niat wajib mendorong pelabelan tidak jujur ke arah `RUTIN` | Audit niat sekali per siklus + larangan nada menghakimi pada label (§7.1, §7.2) |
-| **P-03** | Sedang | `DARURAT` jadi pintu keluar bebas rasa bersalah | Bingkai "setara X hari runway" yang sama persis + pertanyaan refleksi bila darurat > 20% (§4.6) |
-| **U-01** | Tinggi | `selisihHari` dipakai di mana-mana tapi tidak pernah didefinisikan | Didefinisikan formal, dengan konsekuensinya dijabarkan dan dikunci lewat tes (§4.1, §10.1) |
-| **U-02** | Sedang | "N hari terakhir" ambigu — termasuk hari ini atau tidak? | Hari ini dikeluarkan secara eksplisit; alasannya dijelaskan (§4.5) |
-| **U-03** | Sedang | Tipe `NotifSettings` menggantung | Didefinisikan (§5) |
-| **U-04** | Sedang | Model data bilang satu tag, wireframe menyiratkan banyak | Diputuskan tepat satu; chip jadi pilih-satu (§5, §7.1) |
-| **U-05** | Sedang | Aturan penyuntingan transaksi tidak ada sama sekali | Subbagian §5.1.1 ditambahkan |
-| **U-06** | Rendah | Kolom `note` ada di model tapi tidak ada di UI | Dispesifikasikan: tersembunyi di balik tautan, maks 200 karakter, bisa dicari (§7.1) |
-| **U-07** | Sedang | Berkas cadangan tanpa versi skema → impor lintas-versi mustahil | Amplop cadangan berversi didefinisikan (§9.1) |
-| **U-08** | Sedang | `toWalletId` tidak diindeks padahal dipakai tiap hitung saldo | Ditambahkan ke indeks Dexie (§5.2) |
-| **U-09** | Rendah | Periode `rasioImpuls` tidak pernah ditentukan | Siklus berjalan, dengan penjagaan data tipis (§4.6) |
-| **U-10** | Rendah | Banding minggu bisa membagi nol | Penjagaan data tipis untuk semua metrik (§4.7) |
-| **U-11** | Rendah | Onboarding tidak punya jalan ke mode `manual` | Pertanyaan ketiga jadi tiga jalur (§7.5) |
+| **C-01** | Critical | Pay button writes to two tables without atomicity; mid-failure → commitment deducted twice | `paidCycles` removed; paid status derived from transactions (§4.3). Single write, no broken windows. |
+| **H-01** | Critical | Deleting payment to trash does not restore unpaid status | Vanishes automatically via the same change — `isPaid` is a query over active transactions (§4.3) |
+| **H-10** | High | `cycleKey` used but never defined; impossible for `manual` and `rolling` | No more `cycleKey`. Commitment window becomes a single rule `[startOfMonth, cycleEnd]` (§4.3) |
+| **H-02** | High | Overdue unpaid bills disappear from calculations — forgetting to pay actually **increases** allowance | Window lower bound changed from `today` to `startOfMonth` (§4.3) |
+| **C-02** | High | Claim "allowance stable throughout the day" false — mid-day income changes it | Claim corrected to "stable against discretionary spend", with an explicit table of which events change allowance and which do not (§4.4) |
+| **C-03** | High | Moving to `reserve` reduces allowance — app punishes saving | **Different approach:** saving modeled as a commitment `kind: 'saving'` so it is deducted upfront. Moving money thus does not change allowance at all. Zero new concepts. (§4.3) |
+| **C-04** | High | Editing old history shifts today's allowance without explanation | One-time banner on Record screen (§4.4) |
+| **C-05** | Medium | Future-dated transactions erode allowance without being restored | Future dates rejected at repository layer — one rule kills an entire bug class (§5.1) |
+| **C-06** | Medium | Archiving wallet silently reduces allowance | **Different approach:** not merely a warning dialog — archiving a `spendable` wallet with a balance is **rejected**, funds must be moved first (§5.1) |
+| **C-07** | Medium | Changing `endBuffer` silently reduces allowance | Preview required before save for all settings that shift allowance (§7.4) |
+| **P-01** | High | Static numbers become wallpaper within ~3 weeks | Three anti-habituation mechanisms, including intervention at the decision second before money goes out (§7.1) |
+| **P-02** | Medium | Mandatory intent pushes dishonest labeling toward `RUTIN` | Intent audit once per cycle + prohibition of judgmental tone on labels (§7.1, §7.2) |
+| **P-03** | Medium | `DARURAT` becomes a guilt-free exit door | Same exact "equivalent to X days of runway" framing + reflection question if emergency > 20% (§4.6) |
+| **U-01** | High | `daysBetween` used everywhere but never defined | Formally defined, with consequences detailed and locked via test (§4.1, §10.1) |
+| **U-02** | Medium | "Last N days" ambiguous — includes today or not? | Today explicitly excluded; rationale explained (§4.5) |
+| **U-03** | Medium | Type `NotifSettings` dangling | Defined (§5) |
+| **U-04** | Medium | Data model says one tag, wireframe implies multiple | Decided exactly one; chips become single-select (§5, §7.1) |
+| **U-05** | Medium | Transaction editing rules completely absent | Subsection §5.1.1 added |
+| **U-06** | Low | `note` field exists in model but absent in UI | Specified: hidden behind link, max 200 characters, searchable (§7.1) |
+| **U-07** | Medium | Backup file without schema version → cross-version import impossible | Versioned backup envelope defined (§9.1) |
+| **U-08** | Medium | `toWalletId` unindexed despite use in every balance calculation | Added to Dexie index (§5.2) |
+| **U-09** | Low | `impulseRatio` period never specified | Current cycle, with thin-data guard (§4.6) |
+| **U-10** | Low | Week comparison can divide by zero | Thin-data guard for all metrics (§4.7) |
+| **U-11** | Low | Onboarding has no path to `manual` mode | Third question becomes three paths (§7.5) |
 
 ---
 
-## 14. Di Luar Cakupan
+## 14. Out of Scope
 
-Ditolak secara sadar. Menambahkan salah satunya butuh alasan baru yang eksplisit, bukan sekadar "sekalian".
+Consciously rejected. Adding any of these requires an explicit new rationale, not merely "while we're at it".
 
-Multi-mata-uang · multi-pemakai · sinkronisasi/cloud · amplop budget · foto struk · OCR · transaksi berulang otomatis (komitmen sudah menutup kebutuhan nyatanya) · pelacakan utang-piutang · library grafik · terjemahan (Bahasa Indonesia saja) · iOS · widget layar utama · impor mutasi bank.
+Multi-currency · multi-user · sync/cloud · budget envelopes · receipt photos · OCR · automatic recurring transactions (commitments already cover actual needs) · debt-credit tracking · chart libraries · translation (Indonesian only) · iOS · home screen widget · bank statement import.
 
 ---
 
-## 15. Risiko yang Diketahui
+## 15. Known Risks
 
-Dicatat supaya tidak jadi kejutan, bukan supaya diperdebatkan lagi.
+Recorded so as not to be a surprise, not to be debated again.
 
-| Risiko | Dampak | Sikap |
+| Risk | Impact | Stance |
 |---|---|---|
-| Notifikasi terjadwal dibunuh OEM | K3 melemah | Diterima; §8.4 adalah jaring pengamannya |
-| Fitur native tak bisa diuji di browser | Fase 3 kehilangan dev loop instan | Diterima; harga dari D3 |
-| Isi notifikasi bisa basi | Ringkasan harian sesekali meleset | Diterima; alternatifnya lebih rapuh |
-| Seed cold-start hanyalah tebakan | Runway 14 hari pertama tidak presisi | Diterima; ditandai `perkiraan` di UI |
-| Termux dibunuh phantom process killer | Dev sesekali terputus | Bisa diakali (§11.2) |
-| Ketahanan IndexedDB tak sepenuhnya pasti | Kehilangan data | Dimitigasi berlapis (§9.1), tidak dihilangkan |
-| Empat niat terasa terlalu banyak saat dipakai | Input melambat | Pantau; taksonomi bisa diciutkan tanpa migrasi karena `intent` cuma string |
-| **Pembiasaan: angka jangkar berhenti dilihat** | Aplikasi diam-diam kembali jadi pencatat — kegagalan total terhadap K1 | Dimitigasi (§7.1) tapi **tidak** dihilangkan. Ini risiko eksistensial aplikasi ini, bukan risiko teknis. Bila setelah dua bulan pemakaian rasio impuls tidak bergerak sama sekali, mekanisme anti-pembiasaannya yang gagal, bukan pemakainya. |
-| **Pelabelan tidak jujur ke arah `RUTIN`** | Rasio impuls menuju nol sementara perilaku tidak berubah | Audit niat per siklus (§7.2) mengoreksi tepat pada arah biasnya, tapi bergantung pada kejujuran saat tidak terburu-buru |
-| Seluruh matematika bergantung pada `saldoBelanja` yang benar | Satu dompet lupa dicatat → semua angka salah | Tidak ada rekonsiliasi bank otomatis. Layar Atur perlu jalur "sesuaikan saldo" yang membuat transaksi koreksi eksplisit, bukan menulis ulang saldo diam-diam. |
+| Scheduled notifications killed by OEM | K3 weakened | Accepted; §8.4 is the safety net |
+| Native features cannot be tested in browser | Phase 3 loses instant dev loop | Accepted; price of D3 |
+| Notification content can go stale | Daily summary occasionally off | Accepted; alternative is more fragile |
+| Cold-start seed is only a guess | First 14 days runway imprecise | Accepted; marked `"perkiraan"` in UI |
+| Termux killed by phantom process killer | Dev occasionally interrupted | Workaround available (§11.2) |
+| IndexedDB durability not fully certain | Data loss | Mitigated in layers (§9.1), not eliminated |
+| Four intents feel like too many in use | Input slows down | Monitor; taxonomy can be collapsed without migration since `intent` is just a string |
+| **Habituation: anchor number stops being looked at** | App quietly reverts to a tracker — total failure against K1 | Mitigated (§7.1) but **not** eliminated. This is an existential risk of this application, not a technical risk. If after two months of use the impulse ratio does not move at all, it is the anti-habituation mechanism that failed, not the user. |
+| **Dishonest labeling toward `RUTIN`** | Impulse ratio trends toward zero while behavior remains unchanged | Intent audit per cycle (§7.2) corrects precisely in the direction of bias, but depends on honesty when not in a rush |
+| Entire math relies on correct `spendableBalance` | One unrecorded wallet → all numbers wrong | No automatic bank reconciliation. Settings screen needs "sesuaikan saldo" path creating explicit correction transactions, not quietly overwriting balance. |
 
 ---
 
-## 16. Definisi Selesai
+## 16. Definition of Done
 
-Versi 2.0.0 layak rilis bila:
+Version 2.0.0 is ready for release when:
 
-1. Mencatat pengeluaran butuh **maksimal tiga tap** dari aplikasi terbuka (mode default, tanpa tag).
-2. Sisa jatah hari ini terlihat **tanpa scroll** saat aplikasi dibuka.
-3. Setiap kasus uji di §10.1 lulus.
-4. Uninstall lalu install ulang, kemudian impor cadangan otomatis, menghasilkan data yang **identik**.
-5. Keempat notifikasi terkirim di perangkat nyata dengan pengecualian baterai aktif.
-6. Tidak ada satu pun rahasia di dalam repositori.
-7. Versi yang tampil di layar Atur cocok dengan `package.json` tanpa pengeditan manual.
-8. Angka jatah harian dan runway cocok dengan hitungan manual di atas kertas untuk satu siklus penuh berisi data nyata.
+1. Logging expenses takes a **maximum of three taps** from app launch (default mode, no tags).
+2. Remaining daily allowance is visible **without scrolling** when app opens.
+3. Every test case in §10.1 passes.
+4. Uninstalling then reinstalling, followed by importing the automatic backup, produces **identical** data.
+5. All four notifications delivered on a real device with battery optimization exception active.
+6. Not a single secret inside the repository.
+7. The version displayed on the Settings screen matches `package.json` without manual editing.
+8. Daily allowance and runway numbers match manual calculation on paper for one full cycle of real data.
 
-Kriteria kedelapan yang paling penting. Sisanya bisa ditambal; angka yang berbohong tidak.
+The eighth criterion is the most important. The rest can be patched; lying numbers cannot.
