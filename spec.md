@@ -434,11 +434,11 @@ src/
   lib/
     domain/            ← pure functions. MUST NOT import db/svelte/capacitor.
       money.ts           formatRupiah, parseRupiah
-      day.ts             dayKeyOf, daysBetween, dateRange
+      day.ts             dayKeyOf, daysBetween, dayRange
       cycle.ts           cycleFor(date, settings) → {start, end, length, daysRemaining}
       commitment.ts      commitmentWindow, isPaid, unpaidCommitments
-      allowance.ts       computeAllowance(input) → {allowance, spent, remaining, status}
-      runway.ts          computeRunway(input) → {days, projection} | null
+      allowance.ts       computeAllowance(input) → {allowanceToday, spentToday, remainingAllowance, status}
+      runway.ts          computeRunway(input) → {days, estimated} | null
       insight.ts         impulseRatio, tagBreakdown, weekComparison, sparklineSeries
       types.ts
     db/
@@ -479,24 +479,24 @@ This boundary is not architectural decoration. It is the sole reason a financial
 
 ```
 ┌────────────────────────────────────┐
-│ Rp 87.400                          │  ← sisa jatah hari ini (K1)
-│ dari Rp 120.000 · runway 19 hari   │  ← lapis kedua
+│ Rp 87.400                          │  ← remaining allowance today (K1)
+│ dari Rp 120.000 · runway 19 hari   │  ← second layer
 ├────────────────────────────────────┤
 │  [ KELUAR ]  masuk   pindah        │  ← mode, default KELUAR
 ├────────────────────────────────────┤
 │            25.000                  │
 │  7 8 9                             │
-│  4 5 6      ⌫                      │  ← keypad, tombol 000
+│  4 5 6      ⌫                      │  ← keypad, 000 key
 │  1 2 3                             │
 │  0 000                             │
 ├────────────────────────────────────┤
-│  #makan #bensin #kopi  + tag       │  ← chip dipelajari dari riwayat
+│  #makan #bensin #kopi  + tag       │  ← chips learned from history
 │  CASH ▾                            │
 ├────────────────────────────────────┤
-│  TERENCANA   │   RUTIN             │  ← grid 2×2, INI tombol simpan
+│  TERENCANA   │   RUTIN             │  ← 2×2 grid, THIS is the save button
 │  IMPULSIF    │   DARURAT           │
 ├────────────────────────────────────┤
-│  ↩ 25.000 #kopi impulsif   [batal] │  ← undo 5 detik
+│  ↩ 25.000 #kopi impulsif   [batal] │  ← 5-second undo
 └────────────────────────────────────┘
 ```
 
