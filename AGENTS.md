@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Instructions for any AI coding agent working in this repository — Claude, Gemini, Codex, Cursor, or anything else. This is the canonical file; `CLAUDE.md` and `GEMINI.md` point here.
+Instructions for any AI coding agent working in this repository — Claude, Gemini, Codex, Cursor, or anything else. This is the canonical file. `CLAUDE.md` points here because Claude Code looks for that filename specifically; every other tool reads `AGENTS.md` directly, so no further per-tool file is needed.
 
 ## What this is
 
