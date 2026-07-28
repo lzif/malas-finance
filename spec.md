@@ -151,25 +151,39 @@ Commitment { id, name, amount, kind: 'bill' | 'saving', dueDay: 1..31, walletId?
 
 **Commitment window.**
 ```
-commitmentWindow = [startOfMonth, cycleEnd]
+commitmentWindow = [cycleStart, cycleEnd]
 ```
 
-One rule that applies to all three cycle modes. Its lower bound is the start of the current month, not today — this is what keeps bills that are **past due but unpaid** counted. A lower bound of `today` in the previous design produced damaging behavior: you forgot to pay electricity on the 10th, then on the 11th the app informed you that your money **increased**. An anchor number that rewards negligence is worse than no number at all.
+The window is the cycle itself. Its lower bound is **not** today — that is what keeps bills that are **past due but unpaid** counted. A lower bound of `today` produced damaging behaviour: you forgot to pay electricity on the 10th, then on the 11th the app informed you that your money had **increased**. An anchor number that rewards negligence is worse than no number at all.
+
+> An earlier revision of this section used `[startOfMonth, cycleEnd]`. That is correct only for a cycle anchored on day 1 and wrong in both directions otherwise: with a cycle of 10 Jul – 9 Aug it reaches back to 1 Jul and pulls in a bill due 5 Jul belonging to the *previous* cycle, overstating what is owed. `cycleStart` already achieves what the month bound was reaching for, since a bill due 25 Jul is still inside 10 Jul – 9 Aug on 1 Aug. Occurrences from before the cycle began were the previous cycle's accounting; carrying them forward forever would permanently depress the allowance over bills that may have been settled outside the app.
+>
+> Known limit: in `rolling` mode `cycleStart` is today, so a bill that fell due earlier this month does not appear. In rolling mode there is no cycle for it to be overdue *within*.
+
+**A window spanning two calendar months contains two occurrences**, and both count. Computing only the occurrence in today's month makes the other invisible and understates what is owed.
 
 ```
-isPaid(c) = there is an active transaction with
-              commitmentId == c.id
-           && dayKey ∈ commitmentWindow
+settlingKind(c)   = c.kind == 'saving' ? 'move' : 'out'
+
+dueOccurrences(c) = for each month the window touches,
+                    the clamped dueDay date, kept when ∈ commitmentWindow
+
+isOccurrencePaid(c, o) = there is an active transaction with
+                           commitmentId == c.id
+                        && kind == settlingKind(c)
+                        && dayKey in the same calendar month as o
 
 unpaidCommitments = Σ c.amount
   for c.active
-   && dueOccurrence(c) ∈ commitmentWindow
-   && !isPaid(c)
+   for each o ∈ dueOccurrences(c)
+    && !isOccurrencePaid(c, o)
 ```
+
+Matching on `settlingKind` matters: without it an `in` carrying the commitment id would mark a bill paid. Matching the calendar month matters too — paying July's rent must not also clear August's.
 
 Because `isPaid` is a query, deleting a payment to trash automatically makes its commitment unpaid again, and restoring it makes it paid again. No synchronization code needs to be written, so no synchronization code can go wrong.
 
-**Paying.** From the Commitment screen via the **Bayar** button, which creates a single transaction with `commitmentId` filled in and `intent = 'routine'` automatically. One write, one table — no cross-table transactions needed. The button is idempotent: when `isPaid(c)` is already true, the button changes to a "lunas" label and can no longer be pressed. No automatic detection from regular transactions — too prone to misguessing.
+**Paying.** From the Commitment screen via the **Bayar** button, which creates a single transaction with `commitmentId` filled in. A `bill` produces an `out` with `intent = 'routine'`; a `saving` produces a `move` into a reserve wallet. Recording a `saving` as an `out` would destroy the money instead of setting it aside, defeating the entire reason the kind exists. One write, one table — no cross-table transactions needed. The button is idempotent: when `isPaid(c)` is already true, the button changes to a "lunas" label and can no longer be pressed. No automatic detection from regular transactions — too prone to misguessing.
 
 **Two commitment types.**
 
@@ -436,7 +450,7 @@ src/
       money.ts           formatRupiah, parseRupiah
       day.ts             dayKeyOf, daysBetween, dayRange
       cycle.ts           cycleFor(date, settings) → {start, end, length, daysRemaining}
-      commitment.ts      commitmentWindow, isPaid, unpaidCommitments
+      commitment.ts      commitmentWindow, dueOccurrences, isOccurrencePaid, unpaidCommitments
       allowance.ts       computeAllowance(input) → {allowanceToday, spentToday, remainingAllowance, status}
       runway.ts          computeRunway(input) → {days, estimated} | null
       insight.ts         impulseRatio, tagBreakdown, weekComparison, sparklineSeries
@@ -737,7 +751,11 @@ List of cases that **must** exist, because each represents a way this applicatio
 - Paying a commitment marks it paid; deleting payment to trash makes it unpaid **again**
 - Restoring payment from trash marks it paid again
 - Pay button is idempotent: an already paid commitment cannot be paid twice
-- Window `[startOfMonth, cycleEnd]` behaves correctly across all three cycle modes, including `rolling`
+- Window `[cycleStart, cycleEnd]` behaves correctly across all three cycle modes
+- A cross-month window counts the occurrence in each month it contains
+- An occurrence falling before the cycle started is excluded
+- A payment of the wrong kind (an `in`, or an `out` against a `saving`) does not settle a commitment
+- A July payment does not settle the August occurrence
 - `dueDay = 31` in short months is clamped to the last day
 - Commitment created mid-cycle counts immediately if its due date is still within the window
 - `amount` exceeds balance → minus condition, not an error
@@ -859,8 +877,8 @@ Twenty-four findings, zero repetitions from Round 1. All accepted; three resolve
 |---|---|---|---|
 | **C-01** | Critical | Pay button writes to two tables without atomicity; mid-failure → commitment deducted twice | `paidCycles` removed; paid status derived from transactions (§4.3). Single write, no broken windows. |
 | **H-01** | Critical | Deleting payment to trash does not restore unpaid status | Vanishes automatically via the same change — `isPaid` is a query over active transactions (§4.3) |
-| **H-10** | High | `cycleKey` used but never defined; impossible for `manual` and `rolling` | No more `cycleKey`. Commitment window becomes a single rule `[startOfMonth, cycleEnd]` (§4.3) |
-| **H-02** | High | Overdue unpaid bills disappear from calculations — forgetting to pay actually **increases** allowance | Window lower bound changed from `today` to `startOfMonth` (§4.3) |
+| **H-10** | High | `cycleKey` used but never defined; impossible for `manual` and `rolling` | No more `cycleKey`. Commitment window becomes a single rule over the cycle (§4.3) |
+| **H-02** | High | Overdue unpaid bills disappear from calculations — forgetting to pay actually **increases** allowance | Window lower bound changed from `today` to `cycleStart` (§4.3) |
 | **C-02** | High | Claim "allowance stable throughout the day" false — mid-day income changes it | Claim corrected to "stable against discretionary spend", with an explicit table of which events change allowance and which do not (§4.4) |
 | **C-03** | High | Moving to `reserve` reduces allowance — app punishes saving | **Different approach:** saving modeled as a commitment `kind: 'saving'` so it is deducted upfront. Moving money thus does not change allowance at all. Zero new concepts. (§4.3) |
 | **C-04** | High | Editing old history shifts today's allowance without explanation | One-time banner on Record screen (§4.4) |

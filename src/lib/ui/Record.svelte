@@ -6,6 +6,7 @@
   // saving if the amount would exceed the remaining allowance, (3) once the
   // allowance is exceeded, tomorrow's reduced allowance is stated outright.
 
+  import { onDestroy } from 'svelte'
   import { appState } from '../stores/appState.svelte'
   import { formatRupiah, formatNumber } from '../domain/money'
   import { allowanceBand, projectedOverspend } from '../domain/allowance'
@@ -41,6 +42,13 @@
   // mistyped amount corrected immediately afterwards became permanent.
   let snacks = $state<Snack[]>([])
   let snackSeq = 0
+  // Timers outlive the component otherwise, and fire against a destroyed one.
+  const snackTimers = new Set<ReturnType<typeof setTimeout>>()
+
+  onDestroy(() => {
+    for (const t of snackTimers) clearTimeout(t)
+    snackTimers.clear()
+  })
 
   const amount = $derived(Number(amountDigits))
   const walletId = $derived(appState.wallets[0]?.id ?? '')
@@ -104,9 +112,11 @@
   function fireSnackbar(text: string, undo: () => Promise<void>) {
     const id = ++snackSeq
     snacks = [...snacks, { id, text, undo }]
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       snacks = snacks.filter((s) => s.id !== id)
+      snackTimers.delete(timer)
     }, 5000)
+    snackTimers.add(timer)
   }
 
   async function dismissSnack(snack: Snack) {

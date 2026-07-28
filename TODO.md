@@ -53,10 +53,18 @@ at single-user scale. None are forgotten; none are safe to forget.
   `deletedAt: number | null` model in spec §5. Fine at a few thousand rows.
 - **`dayKey` values become inconsistent if the device changes timezone.**
   Recorded in spec §10.1 as a required test; no code handles it.
-- **Commitments assume one due occurrence per cycle window.** With a cycle
-  anchored mid-month (e.g. the 25th), the window spans two calendar months and
-  only the current month's occurrence is counted. Faithful to spec §4.3 as
-  written, but the spec is the thing that is thin here.
+- **Rolling mode does not surface overdue bills.** In `rolling` mode the cycle
+  starts today, so a bill that fell due earlier this month is outside the
+  commitment window and does not reduce the allowance. In rolling mode there is
+  no cycle for it to be overdue *within*; fixing it properly means giving
+  rolling mode a real period, which belongs to a spec revision, not a patch.
+- **`previewBackup.walletCount` is the wallet count in the file, not the number
+  of wallets that would be newly created.** Computing the delta needs the
+  current wallet list, which a pure function does not have. Matters only once
+  the import UI exists.
+- **Rapid mode toggles queue unbounded tag queries.** A request token means only
+  the newest result is applied, so this is wasted work rather than a wrong
+  answer.
 - **Backup lives in localStorage, not the filesystem.** Different eviction
   policy from IndexedDB, so it is real redundancy — but it is not the
   filesystem and shared-Documents copies §9.1 asks for.

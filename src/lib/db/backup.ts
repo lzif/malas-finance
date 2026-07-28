@@ -39,7 +39,7 @@ export interface BackupPreview {
   latest: string | null
   totalIn: number
   totalOut: number
-  newWallets: number
+  walletCount: number
 }
 
 /**
@@ -69,7 +69,7 @@ export function serializeBackup(input: SerializeBackupInput): string {
  * or failure with a specific ParseError reason:
  * - 'invalid-json': String is not valid JSON.
  * - 'not-a-backup': Missing or incorrect `format` field or invalid structure.
- * - 'unsupported-version': `schemaVersion` higher than CURRENT_SCHEMA_VERSION (1).
+ * - 'unsupported-version': `schemaVersion` outside the supported range (currently exactly 1).
  * - 'empty': Zero valid transactions in the backup.
  */
 export function parseBackup(raw: string): ParseResult {
@@ -94,7 +94,10 @@ export function parseBackup(raw: string): ParseResult {
     return { ok: false, reason: 'not-a-backup' }
   }
 
-  if (obj.schemaVersion > CURRENT_SCHEMA_VERSION) {
+  // Both directions. A version below 1 has no defined shape and no migration
+  // path, and the casts further down would happily accept fields that mean
+  // something else entirely.
+  if (obj.schemaVersion > CURRENT_SCHEMA_VERSION || obj.schemaVersion < 1) {
     return { ok: false, reason: 'unsupported-version' }
   }
 
@@ -141,7 +144,7 @@ export function previewBackup(env: BackupEnvelope): BackupPreview {
       latest: null,
       totalIn: 0,
       totalOut: 0,
-      newWallets: env.wallets?.length ?? 0
+      walletCount: env.wallets?.length ?? 0
     }
   }
 
@@ -170,6 +173,6 @@ export function previewBackup(env: BackupEnvelope): BackupPreview {
     latest,
     totalIn,
     totalOut,
-    newWallets: env.wallets?.length ?? 0
+    walletCount: env.wallets?.length ?? 0
   }
 }

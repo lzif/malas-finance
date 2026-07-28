@@ -14,7 +14,6 @@
 import { db } from './schema'
 import { serializeBackup, parseBackup, type BackupEnvelope } from './backup'
 
-const LATEST_KEY = 'malasfinance.backup.latest'
 const DAILY_PREFIX = 'malasfinance.backup.day.'
 const KEEP_DAILY = 7
 const DEBOUNCE_MS = 30_000
@@ -23,15 +22,39 @@ export interface BackupStatus {
   lastBackupAt: number | null
   dailyCount: number
   stale: boolean
+  /** Set when the last attempt threw — almost always an exhausted quota. */
+  lastError: string | null
 }
 
+/**
+ * Remembered across calls so a silent failure cannot stay silent. Swallowing
+ * the exception keeps the user able to record transactions; discarding the
+ * fact that it happened is what would lose their data.
+ */
+let lastError: string | null = null
+
+/**
+ * Read all four tables inside ONE Dexie read transaction. Four independent
+ * reads can interleave with a concurrent write and produce a snapshot that is
+ * internally inconsistent — a transaction referencing a wallet the snapshot
+ * does not contain. A backup that restores to a broken state is worse than an
+ * obviously missing one.
+ */
 async function snapshot(appVersion: string): Promise<string> {
-  const [settings, wallets, commitments, transactions] = await Promise.all([
-    db.settings.get('settings'),
-    db.wallets.toArray(),
-    db.commitments.toArray(),
-    db.transactions.toArray()
-  ])
+  const [settings, wallets, commitments, transactions] = await db.transaction(
+    'r',
+    db.settings,
+    db.wallets,
+    db.commitments,
+    db.transactions,
+    async () =>
+      Promise.all([
+        db.settings.get('settings'),
+        db.wallets.toArray(),
+        db.commitments.toArray(),
+        db.transactions.toArray()
+      ])
+  )
   if (!settings) throw new Error('settings row missing')
   return serializeBackup({ settings, wallets, commitments, transactions, appVersion })
 }
@@ -61,44 +84,62 @@ function rotate(): void {
 export async function backupNow(appVersion: string, todayKey: string): Promise<boolean> {
   try {
     const json = await snapshot(appVersion)
-    localStorage.setItem(LATEST_KEY, json)
-    localStorage.setItem(DAILY_PREFIX + todayKey, json)
+    // Rotate BEFORE writing so an exhausted quota has a chance to free space,
+    // and store only the dated snapshot: LATEST_KEY used to hold a duplicate of
+    // today's copy, doubling the space every backup consumed.
     rotate()
+    localStorage.setItem(DAILY_PREFIX + todayKey, json)
+    lastError = null
     return true
-  } catch {
+  } catch (err) {
+    lastError = err instanceof Error ? err.message : String(err)
     return false
   }
 }
 
 let timer: ReturnType<typeof setTimeout> | null = null
 
-/** Debounced: a burst of edits produces one snapshot, 30s after the last one. */
-export function scheduleBackup(appVersion: string, todayKey: string): void {
+/**
+ * Debounced: a burst of edits produces one snapshot, 30s after the last one.
+ * `onSettled` lets the caller refresh whatever surfaces the status, so a
+ * failure reaches the screen instead of being dropped on the floor.
+ */
+export function scheduleBackup(
+  appVersion: string,
+  todayKey: string,
+  onSettled?: () => void
+): void {
   if (typeof localStorage === 'undefined') return
   if (timer) clearTimeout(timer)
   timer = setTimeout(() => {
-    void backupNow(appVersion, todayKey)
+    void backupNow(appVersion, todayKey).then(() => onSettled?.())
   }, DEBOUNCE_MS)
+}
+
+/**
+ * Walks the dated snapshots newest-first and reports the first one that still
+ * parses. Checking only a single "latest" key would report "never backed up"
+ * whenever that one key was truncated, even with six good snapshots beside it.
+ */
+export function latestBackup(): BackupEnvelope | null {
+  if (typeof localStorage === 'undefined') return null
+  for (const key of dailyKeys().reverse()) {
+    const raw = localStorage.getItem(key)
+    if (!raw) continue
+    const parsed = parseBackup(raw)
+    if (parsed.ok) return parsed.data
+  }
+  return null
 }
 
 export function backupStatus(): BackupStatus {
   if (typeof localStorage === 'undefined') {
-    return { lastBackupAt: null, dailyCount: 0, stale: true }
+    return { lastBackupAt: null, dailyCount: 0, stale: true, lastError }
   }
-  const raw = localStorage.getItem(LATEST_KEY)
-  if (!raw) return { lastBackupAt: null, dailyCount: dailyKeys().length, stale: true }
-  const parsed = parseBackup(raw)
-  const lastBackupAt = parsed.ok ? parsed.data.exportedAt : null
+  const latest = latestBackup()
+  const lastBackupAt = latest ? latest.exportedAt : null
   const stale = lastBackupAt === null || Date.now() - lastBackupAt > 3 * 86_400_000
-  return { lastBackupAt, dailyCount: dailyKeys().length, stale }
-}
-
-export function latestBackup(): BackupEnvelope | null {
-  if (typeof localStorage === 'undefined') return null
-  const raw = localStorage.getItem(LATEST_KEY)
-  if (!raw) return null
-  const parsed = parseBackup(raw)
-  return parsed.ok ? parsed.data : null
+  return { lastBackupAt, dailyCount: dailyKeys().length, stale, lastError }
 }
 
 /** Manual export: hand the user a downloadable file. */
@@ -110,5 +151,7 @@ export async function downloadBackup(appVersion: string): Promise<void> {
   a.href = url
   a.download = `malasfinance-backup-${new Date().toISOString().slice(0, 10)}.json`
   a.click()
-  URL.revokeObjectURL(url)
+  // Revoking synchronously cancels the download on browsers that start it
+  // asynchronously after click().
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }

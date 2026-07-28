@@ -225,7 +225,7 @@ describe('backup module', () => {
     expect(preview.totalOut).toBe(250000)
     expect(preview.earliest).toBe('2026-01-01')
     expect(preview.latest).toBe('2026-01-30')
-    expect(preview.newWallets).toBe(2)
+    expect(preview.walletCount).toBe(2)
   })
 
   it('returns nulls and zero totals when previewing envelope with zero active transactions without division by zero', () => {
@@ -264,6 +264,6 @@ describe('backup module', () => {
     expect(preview.latest).toBeNull()
     expect(preview.totalIn).toBe(0)
     expect(preview.totalOut).toBe(0)
-    expect(preview.newWallets).toBe(2)
+    expect(preview.walletCount).toBe(2)
   })
 })

@@ -8,7 +8,7 @@
 
   import { appState } from '../stores/appState.svelte'
   import { formatRupiah } from '../domain/money'
-  import { commitmentWindow, dueOccurrence, isPaid } from '../domain/commitment'
+  import { dueOccurrence, isPaid } from '../domain/commitment'
   import { formatDateShort } from './formatDate'
   import type { Commitment } from '../db/schema'
 
@@ -24,13 +24,10 @@
   const dueDay = $derived(Math.min(31, Math.max(1, Number(dueDayText) || 1)))
   const valid = $derived(name.trim() !== '' && amount > 0)
 
-  const cycle = $derived(appState.cycle)
-  const windowRange = $derived(cycle ? commitmentWindow(appState.today, cycle.end) : null)
   const status = $derived(appState.backupStatus)
 
   function paid(c: Commitment): boolean {
-    if (!windowRange) return false
-    return isPaid(c, appState.transactions, windowRange)
+    return isPaid(c, appState.transactions, appState.today)
   }
 
   async function add() {
@@ -81,9 +78,9 @@
           <span class="amount out">{formatRupiah(c.amount)}</span>
           <span class="meta"> {c.name} · tgl {c.dueDay}</span>
           {#if c.kind === 'saving'}<span class="meta"> · tabungan</span>{/if}
-          {#if windowRange}
-            <span class="meta"> · jatuh tempo {formatDateShort(dueOccurrence(c, appState.today))}</span>
-          {/if}
+          <span class="meta">
+            · jatuh tempo {formatDateShort(dueOccurrence(c, appState.today.slice(0, 7)))}
+          </span>
         </span>
         {#if paid(c)}
           <span class="meta">lunas</span>
@@ -122,6 +119,7 @@
       Terakhir: {new Date(status.lastBackupAt).toLocaleString('id-ID')} · {status.dailyCount} snapshot
       harian
       {#if status.stale}<br />Sudah lebih dari 3 hari — cadangkan sekarang.{/if}
+      {#if status.lastError}<br />Gagal terakhir: {status.lastError}{/if}
     {:else}
       Belum pernah dicadangkan.
     {/if}

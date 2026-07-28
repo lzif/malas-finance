@@ -17,7 +17,7 @@ import {
 import { dayKeyOf } from '../domain/day'
 import { cycleFor } from '../domain/cycle'
 import { computeAllowance, projectedTomorrowAllowance, type AllowanceResult } from '../domain/allowance'
-import { unpaidCommitments as computeUnpaidCommitments } from '../domain/commitment'
+import { settlingKind, unpaidCommitments as computeUnpaidCommitments } from '../domain/commitment'
 import { computeRunway, type RunwayResult } from '../domain/runway'
 import type { CycleResult } from '../domain/types'
 
@@ -118,7 +118,12 @@ class AppState {
   get unpaidCommitments(): number {
     const cycle = this.cycle
     if (!cycle) return 0
-    return computeUnpaidCommitments(this.commitments, this.transactions, this.today, cycle.end)
+    return computeUnpaidCommitments(
+      this.commitments,
+      this.transactions,
+      cycle.start,
+      cycle.end
+    )
   }
 
   /** Per-day share of every active commitment across the cycle (spec §4.5). */
@@ -152,13 +157,21 @@ class AppState {
    */
   get tomorrowAllowance(): number | null {
     const cycle = this.cycle
-    if (!cycle) return null
-    return projectedTomorrowAllowance({
+    const allowance = this.allowance
+    if (!cycle || !allowance) return null
+    // On the last day of the cycle, "tomorrow" belongs to the next cycle with a
+    // fresh balance and a fresh commitment set. Any figure here would be a
+    // guess dressed as a fact.
+    if (cycle.daysRemaining <= 1) return null
+    const projected = projectedTomorrowAllowance({
       spendableBalance: this.spendableBalance,
       unpaidCommitments: this.unpaidCommitments,
       endBuffer: this.settings?.endBuffer ?? 0,
       daysRemaining: cycle.daysRemaining
     })
+    // The line reads "jatah besok turun jadi X". If X is not lower, saying so
+    // is simply false, so show nothing.
+    return projected < allowance.allowanceToday ? projected : null
   }
 
   /** Runway (spec §4.5). */
@@ -201,15 +214,29 @@ class AppState {
 
   /** Every mutation schedules a debounced snapshot (spec §9.1). */
   private touch(): void {
-    scheduleBackup(__APP_VERSION__, this.today)
+    scheduleBackup(__APP_VERSION__, this.today, () => this.invalidateBackupStatus())
   }
 
+  /**
+   * Cached: backupStatus() parses the entire backup JSON, and this getter is
+   * read from a $derived, so an uncached version re-parses megabytes on every
+   * render that touches appState.
+   */
+  private backupStatusCache = $state<BackupStatus | null>(null)
+
   get backupStatus(): BackupStatus {
-    return backupStatus()
+    if (this.backupStatusCache === null) this.backupStatusCache = backupStatus()
+    return this.backupStatusCache
+  }
+
+  private invalidateBackupStatus(): void {
+    this.backupStatusCache = null
   }
 
   async backupNow(): Promise<boolean> {
-    return backupNow(__APP_VERSION__, this.today)
+    const ok = await backupNow(__APP_VERSION__, this.today)
+    this.invalidateBackupStatus()
+    return ok
   }
 
   async exportBackup(): Promise<void> {
@@ -244,19 +271,41 @@ class AppState {
   async removeCommitment(id: string): Promise<void> {
     await deactivateCommitment(id)
     await this.load()
+    this.touch()
   }
 
   /** Pay a commitment: one write, one table. Paid status is derived (spec §4.3). */
   async payCommitment(c: Commitment): Promise<void> {
-    const walletId = c.walletId ?? this.wallets[0]?.id
-    if (!walletId) throw new Error('no wallet available to pay from')
+    const kind = settlingKind(c)
+    const source = this.wallets.find((w) => w.kind === 'spendable' && !w.archived)
+    if (!source) throw new Error('no spendable wallet to pay from')
+
+    if (kind === 'move') {
+      // A saving commitment MOVES money to a reserve wallet. Recording it as an
+      // `out` would destroy the money instead of setting it aside, defeating the
+      // entire reason the `saving` kind exists (spec §4.3).
+      const reserve = this.wallets.find((w) => w.kind === 'reserve' && !w.archived)
+      if (!reserve) throw new Error('no reserve wallet to save into')
+      await this.saveTransaction({
+        kind: 'move',
+        amount: c.amount,
+        intent: null,
+        tag: null,
+        note: null,
+        walletId: c.walletId ?? source.id,
+        toWalletId: reserve.id,
+        commitmentId: c.id
+      })
+      return
+    }
+
     await this.saveTransaction({
       kind: 'out',
       amount: c.amount,
       intent: 'routine',
       tag: null,
       note: null,
-      walletId,
+      walletId: c.walletId ?? source.id,
       toWalletId: null,
       commitmentId: c.id
     })
