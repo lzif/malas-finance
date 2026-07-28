@@ -9,17 +9,20 @@ Last updated: 2026-07-28
 
 ## Pick up here
 
-In order. The first is the only one that risks losing data.
+In order.
 
-1. **Backup to the filesystem.** Snapshots currently go to localStorage, which is
-   redundancy but not durability. Needs Capacitor, and Capacitor is also what
-   Phase 3 needs, so doing it now unblocks both.
-2. **Trash restore UI.** Soft delete works and the 5-second snackbar can undo,
+1. **Trash restore UI.** Soft delete works and the 5-second snackbar can undo,
    but once that window closes a deleted entry is unreachable.
-3. **Balance adjustment** (spec §7.4). Every formula stands on `spendableBalance`
+2. **Balance adjustment** (spec §7.4). Every formula stands on `spendableBalance`
    being right; one forgotten transaction skews everything silently and there is
    currently no way to correct it.
-4. **`manual` cycle mode in onboarding.** Reachable from settings only.
+3. **`manual` cycle mode in onboarding.** Reachable from settings only.
+
+Filesystem backup (was #1 here) is done — Capacitor is in, `Directory.Data`
+snapshots + weekly `Documents` copy verified on a real device 2026-07-28.
+Two pieces of it stay open, not blocking anything above: rotation past 7
+daily files is untested (needs a real week to elapse), and uninstall-survival
+is untested (needs the Phase 4 import UI, which also doesn't exist yet).
 
 Then Phase 2 (the Sadar dashboard). Nothing in Phase 2 is started.
 
@@ -42,7 +45,7 @@ the CSS.
 | Record screen, anchor number | done |
 | Anti-habituation mechanisms (§7.1) | done — all three |
 | Commitments, `bill` + `saving` (§4.3) | done |
-| Automatic backup (§9.1) | partial — localStorage snapshots; filesystem copy still owed |
+| Automatic backup (§9.1) | done — `Directory.Data` daily snapshots + weekly `Documents` copy verified on real device (2026-07-28); rotation-past-7-days untested (needs real week), uninstall-survival untested (no import UI yet, see Phase 4) |
 | Balance adjustment (§7.4) | **not started** |
 | Trash restore UI (§7.3) | **not started** — soft delete works, undo is snackbar-only |
 

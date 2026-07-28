@@ -13,6 +13,8 @@
 
 import { db } from './schema'
 import { serializeBackup, parseBackup, type BackupEnvelope } from './backup'
+import { getBackupFileWriter } from './fsBackup'
+import { writeToAllTargets } from './fsBackup/writeToAllTargets'
 
 const DAILY_PREFIX = 'malasfinance.backup.day.'
 const KEEP_DAILY = 7
@@ -89,12 +91,52 @@ export async function backupNow(appVersion: string, todayKey: string): Promise<b
     // today's copy, doubling the space every backup consumed.
     rotate()
     localStorage.setItem(DAILY_PREFIX + todayKey, json)
+
+    // Own try/catch, deliberately separate from the one below: the
+    // localStorage write above already succeeded, so a native filesystem
+    // failure (permission denial, full disk) must not flip backupNow's
+    // return value to false or poison lastError — that would report the
+    // whole backup as failed when the copy that actually matters worked.
+    try {
+      const writeWeekly = shouldWriteWeeklyCopy(todayKey)
+      await writeToAllTargets(getBackupFileWriter(), todayKey, json, { keep: KEEP_DAILY, writeWeekly })
+      // Marked only after writeToAllTargets returns without throwing, so a
+      // failure in writeDaily/rotateDaily (before the weekly step even runs)
+      // doesn't burn the 7-day window on an attempt that never happened.
+      if (writeWeekly) markWeeklyCopyDone(todayKey)
+    } catch (fsErr) {
+      console.error('filesystem backup failed (localStorage copy still succeeded):', fsErr)
+    }
+
     lastError = null
     return true
   } catch (err) {
     lastError = err instanceof Error ? err.message : String(err)
     return false
   }
+}
+
+const WEEKLY_MARKER_KEY = 'malasfinance.backup.weeklyCopyDoneOn'
+
+/** True at most once per 7-day span. Read-only — does not commit the marker. */
+function shouldWriteWeeklyCopy(todayKey: string): boolean {
+  if (typeof localStorage === 'undefined') return false
+  const last = localStorage.getItem(WEEKLY_MARKER_KEY)
+  // No marker, or the stored date is in the future (clock moved backwards
+  // since it was set) — either way there is no valid window to wait out.
+  if (last && daysSince(last, todayKey) >= 0 && daysSince(last, todayKey) < 7) return false
+  return true
+}
+
+function markWeeklyCopyDone(todayKey: string): void {
+  if (typeof localStorage === 'undefined') return
+  localStorage.setItem(WEEKLY_MARKER_KEY, todayKey)
+}
+
+function daysSince(fromDayKey: string, toDayKey: string): number {
+  const from = new Date(fromDayKey + 'T00:00:00Z').getTime()
+  const to = new Date(toDayKey + 'T00:00:00Z').getTime()
+  return Math.floor((to - from) / 86_400_000)
 }
 
 let timer: ReturnType<typeof setTimeout> | null = null

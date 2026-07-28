@@ -4,8 +4,10 @@ import { svelte } from '@sveltejs/vite-plugin-svelte'
 import pkg from './package.json'
 
 // https://vite.dev/config/
-export default defineConfig({
-  base: '/malas-finance/',
+export default defineConfig(({ mode }) => ({
+  // A Capacitor WebView loads index.html from local app storage, not from a
+  // path under /malas-finance/ — an absolute base there 404s every asset.
+  base: mode === 'capacitor' ? './' : '/malas-finance/',
   // Single source of truth for the version (spec §11.3): package.json only.
   // No version string is ever hand-written elsewhere.
   define: {
@@ -16,4 +18,4 @@ export default defineConfig({
     include: ['src/**/*.{test,spec}.ts'],
     environment: 'node'
   }
-})
+}))
