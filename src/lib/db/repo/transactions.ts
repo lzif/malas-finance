@@ -3,7 +3,7 @@
 // the UI — the UI can be bypassed, the repository cannot.
 
 import { db, type Intent, type Transaction } from '../schema'
-import { dayKeyOf } from '../../domain/day'
+import { addDays, dayKeyOf } from '../../domain/day'
 
 export class ValidationError extends Error {}
 
@@ -112,12 +112,19 @@ export async function recentTransactions(limit: number): Promise<Transaction[]> 
  * The most frequently used tags in the last 30 days for a given `kind`.
  * Used for the tag chips "learned from history" (spec §7.1).
  */
-export async function topTags(kind: Transaction['kind'], limit: number): Promise<string[]> {
+export async function topTags(
+  kind: Transaction['kind'],
+  limit: number,
+  today: string
+): Promise<string[]> {
   const rows = await allActiveTransactions()
-  const cutoff = Date.now() - 30 * 86_400_000
+  // Compare on dayKey, not raw epoch. Every other day boundary in the app
+  // respects dayStartHour; using `Date.now() - 30 days` here would include or
+  // exclude entries near the boundary inconsistently with the rest.
+  const cutoff = addDays(today, -30)
   const counts = new Map<string, number>()
   for (const t of rows) {
-    if (t.kind !== kind || t.tag === null || t.at < cutoff) continue
+    if (t.kind !== kind || t.tag === null || t.dayKey < cutoff) continue
     counts.set(t.tag, (counts.get(t.tag) ?? 0) + 1)
   }
   return [...counts.entries()]

@@ -4,8 +4,9 @@
   import Onboarding from './lib/ui/Onboarding.svelte'
   import Record from './lib/ui/Record.svelte'
   import History from './lib/ui/History.svelte'
+  import Commitments from './lib/ui/Commitments.svelte'
 
-  let screen = $state<'record' | 'history'>('record')
+  let screen = $state<'record' | 'history' | 'commitments'>('record')
 
   onMount(() => {
     appState.load()
@@ -19,11 +20,16 @@
 {:else}
   {#if screen === 'record'}
     <Record />
-  {:else}
+  {:else if screen === 'history'}
     <History />
+  {:else}
+    <Commitments />
   {/if}
   <nav class="nav">
     <button class:active={screen === 'record'} onclick={() => (screen = 'record')}>Catat</button>
     <button class:active={screen === 'history'} onclick={() => (screen = 'history')}>Riwayat</button>
+    <button class:active={screen === 'commitments'} onclick={() => (screen = 'commitments')}>
+      Komitmen
+    </button>
   </nav>
 {/if}

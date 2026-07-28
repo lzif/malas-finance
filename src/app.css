@@ -155,10 +155,10 @@ button {
   background: var(--surface-2);
 }
 
-/* Backspace duduk di sel terakhir grid 3×4 (kanan bawah, paling dekat ibu jari).
-   Sebelumnya ia dipaksa ke `grid-row: 2` tanpa kolom, padahal baris itu sudah
-   penuh oleh 4/5/6 — auto-placement lalu membuat kolom keempat implisit dan
-   seluruh keypad melar. */
+/* Backspace occupies the last cell of the 3×4 grid (bottom right, closest to
+   the thumb). It used to be forced to `grid-row: 2` with no column, but that
+   row was already full with 4/5/6 — auto-placement then created an implicit
+   fourth column and the whole keypad stretched. */
 .keypad-grid .backspace {
   color: var(--text-dim);
 }
@@ -202,7 +202,7 @@ button {
   color: var(--text-dim);
 }
 
-/* ---- Warning line (mekanisme anti-pembiasaan 2) ---- */
+/* ---- Warning line (anti-habituation mechanism 2) ---- */
 
 .warning-line {
   font-size: 0.9rem;
@@ -278,8 +278,8 @@ button {
 .recent-item .amount.out { color: var(--danger); }
 .recent-item .amount.in { color: #4fd88a; }
 
-/* Menghapus harus jadi tindakan yang disengaja. Sebelumnya seluruh baris adalah
-   tombol hapus, sehingga menyentuh entri untuk membacanya justru memusnahkannya. */
+/* Deleting must be deliberate. The entire row used to be the delete button, so
+   tapping an entry to read it destroyed it instead. */
 .row-delete {
   flex: 0 0 auto;
   padding: 6px 10px;
@@ -456,4 +456,57 @@ button {
   color: var(--text-dim);
   text-align: center;
   padding: 40px 16px;
+}
+
+/* ---- Snackbar stack ---- */
+/* A queue rather than one slot: two saves inside the 5s window each keep their
+   own undo. Newest sits closest to the thumb. */
+.snackbar-stack {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 8px;
+  z-index: 20;
+  max-width: calc(100vw - 32px);
+}
+
+.snackbar-stack .snackbar {
+  position: static;
+  left: auto;
+  bottom: auto;
+  transform: none;
+}
+
+/* ---- Commitment form ---- */
+.form-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.form-block input {
+  font-size: 1rem;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+p.hint.error {
+  color: var(--danger);
+}
+
+.mode-btn:disabled,
+.wide-save:disabled,
+.row-delete:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
