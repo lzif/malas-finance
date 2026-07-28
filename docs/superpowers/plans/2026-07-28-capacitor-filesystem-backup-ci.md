@@ -8,6 +8,10 @@
 
 **Tech Stack:** Capacitor 8 (`@capacitor/core`, `@capacitor/cli`, `@capacitor/android`, `@capacitor/filesystem`, all `^8.4.2`/`^8.1.2` — pinned exact versions below), existing Svelte 5 + Vite 6 + vitest 3 stack, GitHub Actions (`ubuntu-latest` runner, JDK 21).
 
+## Execution Order (not the same as Task numbering)
+
+Run **1 → 2 → 8 → 3 → 4 → 5 → 6 → 7 → 9**, not 1-through-9 in order. Task 8 (the CI debug-APK build) is the highest-variance piece — nobody has confirmed the Svelte+Dexie app even boots inside an Android WebView, and that risk (base path, IndexedDB-in-WebView, AGP/JDK wiring) should surface *before* six files of backup code get written on top of it, not after. Get a green APK of the **current, unmodified app** installed and confirmed running first. Task numbers stay as originally written (so cross-references between tasks don't need renumbering) — only the order they're executed in changes.
+
 ## Global Constraints
 
 - Money/data-correctness code has **no comments explaining what**, only non-obvious **why** — match the existing style in `autoBackup.ts` and `backup.ts`.
@@ -99,6 +103,7 @@ Edit `.gitignore`, add:
 
 ```
 android/app/build
+android/app/src/main/assets/public
 android/build
 android/.gradle
 android/local.properties
@@ -106,20 +111,20 @@ android/captures
 android/.cxx
 ```
 
+`android/app/src/main/assets/public` is the copied `dist/` output — `cap sync` regenerates it on every build, so committing it makes every future build a noisy diff.
+
 Do **not** ignore `android/` itself, `android/gradlew`, `android/gradlew.bat`, or `android/gradle/wrapper/` — CI needs the wrapper committed to build without a separate Gradle install step.
 
-- [ ] **Step 5: Verify the native project builds and commit**
+- [ ] **Step 5: Commit — do NOT attempt a local Gradle build**
 
-```bash
-cd android && ./gradlew tasks && cd ..
-```
-
-Expected: Gradle task list prints with no errors (confirms JDK/SDK wiring is sane before anything depends on it in CI).
+This box has 2GB RAM and no Android SDK/`ANDROID_HOME` installed — that is the entire reason Task 8's CI workflow exists. Do not run `./gradlew` anything here; there is no local verification step for "does the native project build" — that question is answered by Task 8's CI run, executed right after this task per the Execution Order above.
 
 ```bash
 git add package.json package-lock.json capacitor.config.ts .gitignore android
 git commit -m "build: add Capacitor and Android platform"
 ```
+
+Note on `capacitor.config.ts`: trust whatever `cap init` actually generates over the snippet in Step 2 above, especially the import line — recent Capacitor versions export `CapacitorConfig` from `@capacitor/cli`, not `@capacitor/core`. Don't "fix" the generated file to match the snippet; the snippet is illustrative, the generated output is authoritative.
 
 ---
 
@@ -833,9 +838,15 @@ git commit -m "ci: add debug APK build workflow"
 
 ---
 
-### Task 9: Manual device verification (not automatable — spec §11.1)
+### Task 9: Manual device verification (not automatable — spec §11.1) — rescoped
 
-**Files:** none — this task produces no code, only a pass/fail record against the acceptance criterion already stated in spec §12: *"data survives uninstall-reinstall via backup."*
+**Files:** none — this task produces no code, only a pass/fail record.
+
+**Rescoped from the original uninstall/reinstall check.** Two things make spec §12's literal "uninstall-reinstall via backup" test unrunnable right now, both confirmed during planning, not assumed:
+1. There is no import UI to drive the reinstall side — TODO.md Phase 4 states it outright: "Import with preview (§9.2) — the parse and preview functions exist in `db/backup.ts` but nothing calls them."
+2. `Directory.Data` (`getFilesDir()`) is wiped by Android on uninstall. The daily snapshots and `latest.json` this plan writes do **not** survive that event. Only the `Directory.Documents/MalasFinance/` weekly copy would (best-effort, wrapped in try/catch, written at most once per 7 days per spec §9.1 item 4's stated cadence) — and a fresh install's first week has no weekly copy yet to test against.
+
+This is a real gap between what spec §12 asks for and what this plan can deliver today, not a corner being cut silently: the uninstall-survival property is **deferred**, not abandoned, until the import UI (TODO.md Phase 4) exists and a real 7-day cycle has produced a weekly copy to test against. What Task 9 verifies instead is everything that's actually buildable and checkable on this timeline.
 
 - [ ] **Step 1: Download the artifact from Task 8's workflow run, install on a real device or emulator**
 
@@ -859,43 +870,29 @@ adb shell run-as com.malasfinance.app cat files/backups/latest.json > /tmp/lates
 cat /tmp/latest.json
 ```
 
-Expected: valid JSON, `"format": "malasfinance-backup"`, `"schemaVersion": 1`, transactions present.
+Expected: valid JSON, `"format": "malasfinance-backup"`, `"schemaVersion": 1`, transactions present, matches what's on-screen in the app.
 
-- [ ] **Step 4: Run the uninstall/reinstall acceptance test (spec §12 exact wording)**
-
-1. Note current `spendableBalance` and transaction count in the app.
-2. `adb uninstall com.malasfinance.app`
-3. Reinstall: `adb install app-debug.apk`
-4. Manually import `latest.json` pulled in Step 3 via the app's import flow (§9.2 — Merge or Full replace, either works for this check since the DB is empty post-uninstall).
-5. Confirm `spendableBalance` and transaction count are **identical** to Step 1.
-
-- [ ] **Step 5: Confirm the >7-daily rotation actually drops old files**
+- [ ] **Step 4: Confirm the >7-daily rotation actually drops old files**
 
 Fake it forward rather than waiting 8 real days: temporarily lower `KEEP_DAILY` in a local branch to 2, rebuild, record transactions across 3 simulated days (change device clock or `dayStartHour` boundary), confirm only 2 `day-*.json` files remain. Revert the temporary change before merging anything.
 
-- [ ] **Step 6: Update `TODO.md`**
+- [ ] **Step 5: Confirm the weekly-copy write path executes at least once (not the same as confirming it survives uninstall)**
 
-Change the Phase 1 table row:
+Temporarily set the `WEEKLY_MARKER_KEY` check to always return `true` (or clear `localStorage`'s marker key) on a local branch, trigger one backup, confirm `adb shell run-as com.malasfinance.app ls files/../files/Documents/MalasFinance/` (actual path depends on how Android exposes `Directory.Documents` for this app — check `Filesystem.getUri({ directory: Directory.Documents, path: '' })` output if the shell path above doesn't resolve) shows `malasfinance-backup-weekly.json`. Revert the temporary change before merging.
 
-```
-| Automatic backup (§9.1) | partial — localStorage snapshots; filesystem copy still owed |
-```
+- [ ] **Step 6: Record the deferred acceptance criterion, don't mark it done**
 
-to:
+Do **not** change TODO.md's Phase 1 row to a bare `done` — that would claim spec §12's full acceptance criterion passed when it didn't. Instead:
 
 ```
-| Automatic backup (§9.1) | done |
+| Automatic backup (§9.1) | done — Directory.Data daily snapshots + rotation verified on <device/emulator name, Android version>; weekly Documents copy write-path verified, uninstall-survival NOT verified (no import UI yet, see Phase 4) |
 ```
 
-only if Steps 2-5 all passed. If the weekly-Documents copy (fsBackup's `writeWeeklyCopy`) couldn't be verified (scoped storage varies by Android version/OEM per spec §9.1 item 4 — it's explicitly best-effort), leave a note rather than marking it silently done:
-
-```
-| Automatic backup (§9.1) | done — Directory.Data snapshots + rotation verified on <device/emulator name, Android version>; weekly Documents copy is best-effort per spec, untested on this device |
-```
+only if Steps 2-5 all passed.
 
 ```bash
 git add TODO.md
-git commit -m "docs: mark automatic backup done after device verification"
+git commit -m "docs: mark filesystem backup write-path verified; uninstall-survival deferred to Phase 4 import UI"
 ```
 
 ---
@@ -908,8 +905,9 @@ git commit -m "docs: mark automatic backup done after device verification"
 - §9.1 item 3 (7 daily rotated snapshots) → Task 4 (`rotateDaily`) + Task 6.
 - §9.1 item 4 (weekly copy to `Directory.Documents/MalasFinance/`, best-effort) → Task 5 (`writeWeeklyCopy`, wrapped in try/catch) + Task 6 (`isWeekAnniversary` cadence).
 - §9.1 item 5 (Settings screen staleness warning) — **out of scope**: no Settings screen exists yet in this codebase (confirmed: no `Settings.svelte` under `src/lib/ui/`). `backupStatus()` in `autoBackup.ts` already exposes `stale: boolean`; wiring it into a UI is a separate, larger task (a whole Settings screen) that belongs to its own plan, not bundled into a backup-infra plan.
-- §12 acceptance ("uninstall-reinstall produces identical data") → Task 9, Step 4, verbatim.
-- 2GB-VPS constraint (build must not run locally) → Task 8, CI-only build; Task 9 downloads the artifact rather than building on-device.
+- §12 acceptance ("uninstall-reinstall produces identical data") → **explicitly deferred**, not implemented: Task 9 was rescoped after review surfaced that `Directory.Data` is wiped on uninstall (only the weekly best-effort Documents copy would survive it) and there is no import UI yet to drive a reinstall test (TODO.md Phase 4). Task 9 verifies the write path (file written, valid JSON, rotation, weekly-copy path exercised) instead of claiming the full acceptance criterion.
+- 2GB-VPS constraint (build must not run locally) → Task 8, CI-only build; Task 1 explicitly drops any local Gradle invocation; Task 9 downloads the artifact rather than building on-device.
+- Execution risk ordering → see "Execution Order" section up top: Task 8 runs third (right after Capacitor install + build config), before any backup code is written, so pipeline failures (WebView/base-path/Dexie/AGP issues) surface against the unmodified app rather than against six new files at once.
 
 **Placeholder scan:** no TBD/TODO markers; every step has runnable commands or complete code blocks; no "similar to Task N" references.
 
