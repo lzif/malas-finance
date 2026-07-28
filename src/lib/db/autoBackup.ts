@@ -13,6 +13,8 @@
 
 import { db } from './schema'
 import { serializeBackup, parseBackup, type BackupEnvelope } from './backup'
+import { getBackupFileWriter } from './fsBackup'
+import { writeToAllTargets } from './fsBackup/writeToAllTargets'
 
 const DAILY_PREFIX = 'malasfinance.backup.day.'
 const KEEP_DAILY = 7
@@ -89,12 +91,35 @@ export async function backupNow(appVersion: string, todayKey: string): Promise<b
     // today's copy, doubling the space every backup consumed.
     rotate()
     localStorage.setItem(DAILY_PREFIX + todayKey, json)
+
+    await writeToAllTargets(getBackupFileWriter(), todayKey, json, {
+      keep: KEEP_DAILY,
+      writeWeekly: isWeekAnniversary(todayKey)
+    })
+
     lastError = null
     return true
   } catch (err) {
     lastError = err instanceof Error ? err.message : String(err)
     return false
   }
+}
+
+const WEEKLY_MARKER_KEY = 'malasfinance.backup.weeklyCopyDoneOn'
+
+/** True at most once per 7-day span; persists the marker across sessions. */
+function isWeekAnniversary(todayKey: string): boolean {
+  if (typeof localStorage === 'undefined') return false
+  const last = localStorage.getItem(WEEKLY_MARKER_KEY)
+  if (last && daysSince(last, todayKey) < 7) return false
+  localStorage.setItem(WEEKLY_MARKER_KEY, todayKey)
+  return true
+}
+
+function daysSince(fromDayKey: string, toDayKey: string): number {
+  const from = new Date(fromDayKey + 'T00:00:00Z').getTime()
+  const to = new Date(toDayKey + 'T00:00:00Z').getTime()
+  return Math.floor((to - from) / 86_400_000)
 }
 
 let timer: ReturnType<typeof setTimeout> | null = null
