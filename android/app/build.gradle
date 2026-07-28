@@ -16,10 +16,21 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            // Left empty deliberately. AGP fills unset fields of a declared
+            // signingConfig from -Pandroid.injected.signing.* command-line
+            // properties (see .github/workflows/android-release.yml) — this
+            // is the standard CI signing pattern that keeps every actual
+            // secret value out of source control (spec §11.3, AGENTS.md).
+            // Never populate this block with a real path/password.
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.release
         }
     }
 }

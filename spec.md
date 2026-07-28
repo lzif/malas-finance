@@ -718,6 +718,36 @@ Corrupted file, invalid JSON, or zero valid entries → *"Tidak ada entri yang b
 - Emptying the entire trash requires typed confirmation (`HAPUS`) regardless of the amount.
 - Wallets still referenced by active transactions cannot be deleted — only archived.
 
+### 9.5 Markdown export
+
+A human-readable `.md` file of transaction history, distinct from the JSON backup envelope (§9.1): the backup is a full-fidelity snapshot for restoring the app (deleted rows included, machine-parsed), this is a report for a human to read. Reached from the same Cadangan panel as the JSON export, via a separate "Unduh Markdown" action — it never blocks or replaces the JSON path.
+
+**Scope: active transactions only.** Soft-deleted rows are excluded outright — carrying them into a document meant to be read would misrepresent what actually happened, and the JSON backup is already the place that preserves them (§9.1: "a full backup, not a report export").
+
+**Structure:**
+
+```
+# MalasFinance — Ekspor Riwayat
+
+Diekspor: <local date+time>
+Rentang: <earliest dayKey> s/d <latest dayKey>
+Total transaksi: <count>
+Total masuk: Rp <total in>
+Total keluar: Rp <total out>
+
+## <dayKey, newest first>
+| Waktu | Jenis | Jumlah | Dompet | Intent | Tag | Catatan |
+|---|---|---|---|---|---|---|
+| 14:20 | keluar | -25.000 | CASH | IMPULSIF | #kopi | |
+...
+```
+
+- Days are ordered newest-first, matching the History screen's existing convention (`transactionsGroupedByDay`) so the export reads consistently with the app.
+- `Jenis` is `keluar` / `masuk` / `pindah`; `Jumlah` carries a `-`/`+` sign for `keluar`/`masuk` and no sign for `pindah`. `Dompet` shows the wallet name, or `"<sumber> -> <tujuan>"` for a `pindah`; an id that no longer resolves to a wallet renders as `?` rather than failing the export.
+- `Intent` uses the same Indonesian labels as the Record screen (`TERENCANA`/`RUTIN`/`IMPULSIF`/`DARURAT`), blank when the transaction has none (`masuk`/`pindah`).
+- `Catatan` has any `|` escaped as `\|` and newlines collapsed to a space — both would otherwise break the Markdown table's row structure.
+- With zero active transactions, the metadata block still renders (with zeroed totals and `Rentang: -`) followed by a single line, `Belum ada transaksi untuk diekspor.` — no empty table.
+
 ---
 
 ## 10. Testing
@@ -820,11 +850,11 @@ Real obstacles that need to be worked around once at the start:
 
 ### 11.3 CI and release
 
-- Trigger: changes affecting the APK only, same as v1.
-- Steps: `npm ci` → `npm test` → `npm run build` → `cap sync` → `assembleRelease` → sign → release.
-- **Keystore and passwords must originate from GitHub Secrets.** The v2 repo must not contain `.keystore`, `.base64`, or passwords in any form. This is technical debt from v1 and must not be inherited.
+- Trigger: `workflow_dispatch` only (`.github/workflows/android-release.yml`) — deliberately manual, not on every push like the unsigned debug workflow. This pipeline creates a git tag and a GitHub Release, both one-way actions, and depends on secrets that may not be configured yet; automatic triggering risks minting a junk release the moment the workflow file lands on `main`.
+- Steps: `npm ci` → `npm test` → `npm run build:android` → `cap sync` → `assembleRelease` (signed) → tag + release.
+- **Keystore and passwords must originate from GitHub Secrets.** The v2 repo must not contain `.keystore`, `.base64`, or passwords in any form. This is technical debt from v1 and must not be inherited. Signing uses AGP's `-Pandroid.injected.signing.*` command-line properties (populated from four secrets: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`) against an intentionally-empty `signingConfigs.release` block in `android/app/build.gradle` — the keystore itself is decoded to `$RUNNER_TEMP`, never into the repository checkout.
 - Tag `v<version>-b<build>`, APK `MalasFinance-v<version>-b<build>.apk`, release notes containing commit SHA and changelog since previous tag.
-- **Single-source version** from `package.json`, injected via Vite `define`, displayed on the Settings screen. No handwritten version strings anywhere — this eliminates v1's chronic issue (three-way drift between build.gradle, README, and UI).
+- **Single-source version** from `package.json`, injected via Vite `define`, displayed on the Settings screen. No handwritten version strings anywhere — this eliminates v1's chronic issue (three-way drift between build.gradle, README, and UI). **`<build>`** has no equivalent single source in `package.json`, so it is `github.run_number` — a monotonically increasing integer GitHub already provides per-workflow, requiring no additional file to stay in sync.
 
 ---
 

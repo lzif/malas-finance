@@ -45,6 +45,15 @@ export async function activeWallets(): Promise<Wallet[]> {
 }
 
 /**
+ * Every wallet, including archived ones. Used by the import preview (spec
+ * §9.2) so an archived wallet whose id reappears in a backup file is not
+ * miscounted as "new" — activeWallets() alone would miss it.
+ */
+export async function allWallets(): Promise<Wallet[]> {
+  return db.wallets.toArray()
+}
+
+/**
  * walletBalance(w) = w.initialBalance + Σ(in→w) − Σ(out←w) + Σ(move→w) − Σ(move←w)
  * Only transactions with deletedAt == null.
  */

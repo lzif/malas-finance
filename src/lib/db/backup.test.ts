@@ -266,4 +266,76 @@ describe('backup module', () => {
     expect(preview.totalOut).toBe(0)
     expect(preview.walletCount).toBe(2)
   })
+
+  it('treats every wallet/commitment as new when previewBackup is called without a `current` argument (backward compatible)', () => {
+    const envelope: BackupEnvelope = {
+      format: 'malasfinance-backup',
+      schemaVersion: 1,
+      appVersion: '2.0.0',
+      exportedAt: Date.now(),
+      settings: mockSettings,
+      wallets: mockWallets,
+      commitments: mockCommitments,
+      transactions: mockTransactions
+    }
+    const preview = previewBackup(envelope)
+    expect(preview.newWalletCount).toBe(mockWallets.length)
+    expect(preview.newCommitmentCount).toBe(mockCommitments.length)
+  })
+
+  it('computes new-wallet/new-commitment counts against a supplied `current` state, by id only (spec §9.2 preview)', () => {
+    const envelope: BackupEnvelope = {
+      format: 'malasfinance-backup',
+      schemaVersion: 1,
+      appVersion: '2.0.0',
+      exportedAt: Date.now(),
+      settings: mockSettings,
+      wallets: mockWallets, // w1, w2
+      commitments: mockCommitments, // c1
+      transactions: mockTransactions
+    }
+
+    // w1 already exists locally; w2 does not. Neither commitment exists locally.
+    const preview = previewBackup(envelope, {
+      wallets: [{ ...mockWallets[0] }],
+      commitments: []
+    })
+
+    expect(preview.newWalletCount).toBe(1)
+    expect(preview.newCommitmentCount).toBe(1)
+    // walletCount (total in file) is unaffected by `current` — still the raw file count.
+    expect(preview.walletCount).toBe(mockWallets.length)
+  })
+
+  it('dedups a corrupted file with duplicate wallet ids before counting "new" — must match what planMergeImport actually inserts', () => {
+    const dupWallet = { ...mockWallets[0], id: 'dup-id' }
+    const envelope: BackupEnvelope = {
+      format: 'malasfinance-backup',
+      schemaVersion: 1,
+      appVersion: '2.0.0',
+      exportedAt: Date.now(),
+      settings: mockSettings,
+      wallets: [dupWallet, { ...dupWallet }], // same id twice, neither exists locally
+      commitments: [],
+      transactions: mockTransactions
+    }
+    const preview = previewBackup(envelope, { wallets: [], commitments: [] })
+    expect(preview.newWalletCount).toBe(1)
+  })
+
+  it('reports zero new wallets/commitments when every id already exists locally', () => {
+    const envelope: BackupEnvelope = {
+      format: 'malasfinance-backup',
+      schemaVersion: 1,
+      appVersion: '2.0.0',
+      exportedAt: Date.now(),
+      settings: mockSettings,
+      wallets: mockWallets,
+      commitments: mockCommitments,
+      transactions: mockTransactions
+    }
+    const preview = previewBackup(envelope, { wallets: mockWallets, commitments: mockCommitments })
+    expect(preview.newWalletCount).toBe(0)
+    expect(preview.newCommitmentCount).toBe(0)
+  })
 })

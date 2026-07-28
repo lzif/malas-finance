@@ -4,9 +4,19 @@
 import { untrack } from 'svelte'
 import { db, type Commitment, type Settings, type Transaction, type Wallet } from '../db/schema'
 import { backupNow, backupStatus, downloadBackup, scheduleBackup, type BackupStatus } from '../db/autoBackup'
+import {
+  parseBackup,
+  previewBackup,
+  type BackupEnvelope,
+  type BackupPreview,
+  type ParseError
+} from '../db/backup'
+import { applyFullReplaceImport, applyMergeImport } from '../db/import'
+import { downloadMarkdownExport } from '../db/markdownExport'
 import { getSettings, updateSettings as repoUpdateSettings } from '../db/repo/settings'
 import {
   activeWallets,
+  allWallets,
   createWallet,
   spendableBalance as computeSpendableBalance,
   walletBalance as computeWalletBalance
@@ -266,6 +276,56 @@ class AppState {
 
   async exportBackup(): Promise<void> {
     await downloadBackup(__APP_VERSION__)
+  }
+
+  /** Markdown export (spec §9.5) — a readability report, active transactions only. */
+  async exportMarkdown(): Promise<void> {
+    const wallets = await allWallets()
+    await downloadMarkdownExport(this.transactions, wallets)
+  }
+
+  /**
+   * Parses + previews an import file (spec §9.2). Wallet/commitment "new"
+   * counts are computed against the FULL local wallet list (including
+   * archived), not `this.wallets` (active-only) — an archived wallet whose id
+   * reappears in the file must not be miscounted as new.
+   */
+  async previewImport(
+    raw: string
+  ): Promise<
+    | { ok: true; envelope: BackupEnvelope; preview: BackupPreview }
+    | { ok: false; reason: ParseError }
+  > {
+    const parsed = parseBackup(raw)
+    if (!parsed.ok) return parsed
+    const currentWallets = await allWallets()
+    const preview = previewBackup(parsed.data, {
+      wallets: currentWallets,
+      commitments: this.commitments
+    })
+    return { ok: true, envelope: parsed.data, preview }
+  }
+
+  /** Merge mode (spec §9.2): additive only, every transaction gets a fresh id. */
+  async importMerge(envelope: BackupEnvelope): Promise<number> {
+    const { importedCount } = await applyMergeImport(envelope, this.dayStartHour)
+    await this.load()
+    this.touch()
+    return importedCount
+  }
+
+  /**
+   * Full replace mode (spec §9.2): clears the database, then restores the
+   * file verbatim. `trash` is reset directly rather than reloaded — it isn't
+   * populated by load(), so a stale trash list would otherwise keep showing
+   * rows that no longer exist after the replace.
+   */
+  async importFullReplace(envelope: BackupEnvelope): Promise<number> {
+    const { importedCount } = await applyFullReplaceImport(envelope)
+    await this.load()
+    this.trash = []
+    this.touch()
+    return importedCount
   }
 
   async saveTransaction(input: NewTransactionInput): Promise<Transaction> {

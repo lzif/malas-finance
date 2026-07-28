@@ -11,3 +11,13 @@ android/.gradle
 android/local.properties
 android/captures
 android/.cxx
+
+# Signing material must never be committed (spec §11.3) — CI decodes the
+# keystore from GitHub Secrets into $RUNNER_TEMP, never into the repo.
+*.jks
+*.keystore
+*.keystore.base64
+# Scratch files written at repo root only by android-release.yml's own steps,
+# inside the ephemeral CI checkout — not general-purpose ignore patterns.
+/changelog.txt
+/release_notes.txt

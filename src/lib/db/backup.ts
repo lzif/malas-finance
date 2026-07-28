@@ -1,5 +1,11 @@
 import type { Commitment, Settings, Transaction, Wallet } from './schema'
 
+/** Current DB state to diff a backup against, for accurate "new X" preview counts (spec §9.2). */
+export interface CurrentState {
+  wallets: Wallet[]
+  commitments: Commitment[]
+}
+
 /** Current supported backup schema version (spec §9.1). */
 export const CURRENT_SCHEMA_VERSION = 1
 
@@ -40,6 +46,16 @@ export interface BackupPreview {
   totalIn: number
   totalOut: number
   walletCount: number
+  /**
+   * How many of env.wallets are not already present locally (matched by id).
+   * Without a `current` argument to previewBackup, every wallet in the file
+   * counts as "new" — the only answer computable without knowing local state
+   * (see the `previewBackup.walletCount` entry in TODO.md's known-defects list,
+   * which this field replaces now that the import UI exists to supply `current`).
+   */
+  newWalletCount: number
+  /** Same idea as newWalletCount, for env.commitments. */
+  newCommitmentCount: number
 }
 
 /**
@@ -133,7 +149,15 @@ export function parseBackup(raw: string): ParseResult {
  * Counts only non-deleted transactions. Returns earliest and latest dayKey strings,
  * total income, total outgoing spend, and wallet count.
  */
-export function previewBackup(env: BackupEnvelope): BackupPreview {
+export function previewBackup(env: BackupEnvelope, current?: CurrentState): BackupPreview {
+  const walletCount = env.wallets?.length ?? 0
+  const newWalletCount = current
+    ? countNew(env.wallets, current.wallets)
+    : walletCount
+  const newCommitmentCount = current
+    ? countNew(env.commitments ?? [], current.commitments)
+    : (env.commitments ?? []).length
+
   const activeTx = (env.transactions ?? []).filter((t) => t.deletedAt === null)
   const count = activeTx.length
 
@@ -144,7 +168,9 @@ export function previewBackup(env: BackupEnvelope): BackupPreview {
       latest: null,
       totalIn: 0,
       totalOut: 0,
-      walletCount: env.wallets?.length ?? 0
+      walletCount,
+      newWalletCount,
+      newCommitmentCount
     }
   }
 
@@ -173,6 +199,28 @@ export function previewBackup(env: BackupEnvelope): BackupPreview {
     latest,
     totalIn,
     totalOut,
-    walletCount: env.wallets?.length ?? 0
+    walletCount,
+    newWalletCount,
+    newCommitmentCount
   }
+}
+
+/**
+ * Count of `incoming` rows whose `id` is not present in `existing` (matched
+ * by id only). Dedupes `incoming` by id first — a corrupted file with two
+ * rows sharing an id must report the same count here as the number of rows
+ * planMergeImport will actually insert (it dedupes the same way), or the
+ * preview shown before import would overstate what's about to happen.
+ */
+function countNew(
+  incoming: { id: string }[] | undefined,
+  existing: { id: string }[]
+): number {
+  const existingIds = new Set(existing.map((row) => row.id))
+  const uniqueIncomingIds = new Set((incoming ?? []).map((row) => row.id))
+  let count = 0
+  for (const id of uniqueIncomingIds) {
+    if (!existingIds.has(id)) count++
+  }
+  return count
 }

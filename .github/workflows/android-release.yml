@@ -1,0 +1,113 @@
+# Required GitHub Secrets (set in repo Settings → Secrets and variables → Actions):
+# - ANDROID_KEYSTORE_BASE64   — the release .jks keystore file, base64-encoded
+# - ANDROID_KEYSTORE_PASSWORD
+# - ANDROID_KEY_ALIAS
+# - ANDROID_KEY_PASSWORD
+#
+# This workflow is workflow_dispatch-only (manual trigger): it creates a git
+# tag and a GitHub Release, and needs the four secrets above which may not be
+# configured yet. It is UNTESTED end-to-end until they are set — see spec
+# §11.3 and AGENTS.md's "keystore and passwords must originate from GitHub
+# Secrets" rule. Nothing in this file is a secret: only `secrets.*` references
+# and the names above.
+
+name: Android Release Build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build web assets for Android
+        run: npm run build:android
+
+      - name: Sync Capacitor
+        run: npx cap sync android
+
+      - name: Compute version and release tag
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          BUILD="${{ github.run_number }}"
+          TAG="v${VERSION}-b${BUILD}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "build=${BUILD}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Decode keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+
+      - name: Build and sign release APK
+        working-directory: android
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./gradlew assembleRelease -Pandroid.injected.signing.store.file="$RUNNER_TEMP/release.jks" -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" -Pandroid.injected.signing.key.alias="$KEY_ALIAS" -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
+
+      - name: Clean up keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.jks"
+
+      - name: Rename release APK
+        run: cp android/app/build/outputs/apk/release/app-release.apk "MalasFinance-v${{ steps.version.outputs.version }}-b${{ steps.version.outputs.build }}.apk"
+
+      - name: Generate changelog since previous tag
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)
+          if [ -n "$PREV_TAG" ]; then
+            git log "$PREV_TAG..HEAD" --oneline > changelog.txt
+          else
+            git log --oneline > changelog.txt
+          fi
+
+      - name: Create and push release tag
+        run: |
+          git tag "${{ steps.version.outputs.tag }}"
+          git push origin "${{ steps.version.outputs.tag }}"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo "Commit: ${{ github.sha }}"
+            echo ""
+            echo "Changelog:"
+            cat changelog.txt
+          } > release_notes.txt
+          gh release create "${{ steps.version.outputs.tag }}" \
+            "MalasFinance-v${{ steps.version.outputs.version }}-b${{ steps.version.outputs.build }}.apk" \
+            --title "${{ steps.version.outputs.tag }}" \
+            --notes-file release_notes.txt

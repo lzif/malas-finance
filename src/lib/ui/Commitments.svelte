@@ -15,6 +15,7 @@
   import { dueOccurrence, isPaid } from '../domain/commitment'
   import { formatDateShort } from './formatDate'
   import type { Commitment, Wallet } from '../db/schema'
+  import type { BackupEnvelope, BackupPreview } from '../db/backup'
 
   let showForm = $state(false)
   let name = $state('')
@@ -90,6 +91,89 @@
     busy = false
     message = ok ? 'Cadangan tersimpan.' : 'Cadangan gagal — penyimpanan penuh?'
     setTimeout(() => (message = null), 4000)
+  }
+
+  async function exportMarkdown() {
+    busy = true
+    await appState.exportMarkdown()
+    busy = false
+  }
+
+  // Import (spec §9.2): select file → parse → preview → confirm. Two modes,
+  // same typed-confirmation pattern History.svelte uses for HAPUS.
+  const CORRUPT_MSG = 'Tidak ada entri yang bisa dibaca — berkas mungkin rusak'
+
+  let importEnvelope = $state<BackupEnvelope | null>(null)
+  let importPreview = $state<BackupPreview | null>(null)
+  let importError = $state<string | null>(null)
+  let importMode = $state<'merge' | 'replace'>('merge')
+  let importConfirmText = $state('')
+  let importBusy = $state(false)
+  let importMessage = $state<string | null>(null)
+
+  function resetImportState() {
+    importEnvelope = null
+    importPreview = null
+    importError = null
+    importMode = 'merge'
+    importConfirmText = ''
+  }
+
+  async function onImportFile(e: Event) {
+    const input = e.currentTarget as HTMLInputElement
+    const file = input.files?.[0]
+    if (!file) return
+    resetImportState()
+    importMessage = null
+    const raw = await file.text()
+    const result = await appState.previewImport(raw)
+    if (!result.ok) {
+      importError =
+        result.reason === 'unsupported-version'
+          ? 'Cadangan ini dari versi aplikasi yang lebih baru.'
+          : CORRUPT_MSG
+      input.value = ''
+      return
+    }
+    // A file can parse fine yet contain zero active entries (e.g. every
+    // transaction already soft-deleted) — that must not read as success
+    // (spec §9.2: corrupted/empty always surfaces the same error, never a
+    // silent "0 ENTRI — IMPOR").
+    if (result.preview.count === 0) {
+      importError = CORRUPT_MSG
+      input.value = ''
+      return
+    }
+    importEnvelope = result.envelope
+    importPreview = result.preview
+    input.value = ''
+  }
+
+  function cancelImport() {
+    resetImportState()
+  }
+
+  async function confirmImport() {
+    if (!importEnvelope || !importPreview || importBusy) return
+    if (importMode === 'replace' && importConfirmText !== 'GANTI') return
+    importBusy = true
+    // Report the SAME count the user already confirmed on the button
+    // (active entries only) rather than the raw write count returned by
+    // import{Merge,FullReplace} — that count also includes soft-deleted rows
+    // carried over for full fidelity, which would silently diverge from what
+    // was shown in the preview (spec §10.3: "preview figures match import
+    // results"). Captured before the await since resetImportState() below
+    // clears importPreview.
+    const shown = importPreview.count
+    if (importMode === 'merge') {
+      await appState.importMerge(importEnvelope)
+    } else {
+      await appState.importFullReplace(importEnvelope)
+    }
+    importBusy = false
+    importMessage = `Impor selesai: ${shown} entri.`
+    resetImportState()
+    setTimeout(() => (importMessage = null), 4000)
   }
 </script>
 
@@ -206,5 +290,83 @@
       Unduh berkas
     </button>
   </div>
+  <div class="mode-row">
+    <button class="mode-btn" disabled={busy} onclick={exportMarkdown}>Unduh Markdown</button>
+  </div>
   {#if message}<p class="hint" transition:fade={{ duration: prefersReducedMotion.current ? 0 : 200 }}>{message}</p>{/if}
+
+  <h2>Impor</h2>
+  <p class="hint">
+    Pilih berkas cadangan (.json) untuk melihat pratinjau sebelum mengimpor. Impor selalu menampilkan
+    pratinjau lebih dulu — tidak pernah langsung mengubah data.
+  </p>
+  <input type="file" accept="application/json,.json" onchange={onImportFile} />
+
+  {#if importError}
+    <p class="hint error" transition:fade={{ duration: prefersReducedMotion.current ? 0 : 200 }}>
+      {importError}
+    </p>
+  {/if}
+
+  {#if importPreview}
+    <div class="form-block" transition:slide={{ duration: prefersReducedMotion.current ? 0 : 200 }}>
+      <p class="hint">
+        {importPreview.count} entri · {importPreview.earliest ? formatDateShort(importPreview.earliest) : '-'}
+        s/d {importPreview.latest ? formatDateShort(importPreview.latest) : '-'}
+      </p>
+      <p class="hint">
+        Masuk {formatRupiah(importPreview.totalIn)} · Keluar {formatRupiah(importPreview.totalOut)}
+      </p>
+      <p class="hint">
+        Dompet baru: {importPreview.newWalletCount} · Komitmen baru: {importPreview.newCommitmentCount}
+      </p>
+
+      <div class="mode-row">
+        <button
+          class="mode-btn"
+          class:active={importMode === 'merge'}
+          onclick={() => (importMode = 'merge')}
+        >
+          GABUNG
+        </button>
+        <button
+          class="mode-btn"
+          class:active={importMode === 'replace'}
+          onclick={() => (importMode = 'replace')}
+        >
+          GANTI SEMUA
+        </button>
+      </div>
+
+      {#if importMode === 'merge'}
+        <div class="mode-row">
+          <button class="mode-btn" onclick={cancelImport}>Batal</button>
+          <button class="mode-btn active" disabled={importBusy} onclick={confirmImport}>
+            {importPreview.count} ENTRI — IMPOR
+          </button>
+        </div>
+      {:else}
+        <div class="confirm-panel" transition:slide={{ duration: prefersReducedMotion.current ? 0 : 200 }}>
+          <p>
+            Seluruh data saat ini akan dihapus dan diganti isi berkas ini. Tidak bisa dibatalkan. Ketik
+            <strong>GANTI</strong> untuk melanjutkan.
+          </p>
+          <input type="text" bind:value={importConfirmText} placeholder="GANTI" />
+          <div class="confirm-actions">
+            <button onclick={cancelImport}>batal</button>
+            <button
+              class="danger"
+              disabled={importConfirmText !== 'GANTI' || importBusy}
+              onclick={confirmImport}
+            >
+              ganti semua data
+            </button>
+          </div>
+        </div>
+      {/if}
+    </div>
+  {/if}
+  {#if importMessage}
+    <p class="hint" transition:fade={{ duration: prefersReducedMotion.current ? 0 : 200 }}>{importMessage}</p>
+  {/if}
 </div>
