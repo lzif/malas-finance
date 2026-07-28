@@ -11,6 +11,8 @@ import {
   allActiveTransactions,
   softDelete as repoSoftDelete,
   restore as repoRestore,
+  trashedTransactions as repoTrashedTransactions,
+  permanentDelete as repoPermanentDelete,
   topTags as repoTopTags,
   type NewTransactionInput
 } from '../db/repo/transactions'
@@ -27,6 +29,13 @@ class AppState {
   transactions = $state<Transaction[]>([])
   commitments = $state<Commitment[]>([])
   loaded = $state(false)
+
+  /**
+   * Trashed entries, loaded only when the Trash tab is opened — unlike
+   * `transactions`, this never feeds a formula, so it has no reason to be
+   * kept warm on every load().
+   */
+  trash = $state<Transaction[]>([])
 
   /**
    * Reactive clock. `today` MUST NOT read `Date.now()` directly: that isn't
@@ -259,7 +268,25 @@ class AppState {
   async restoreTransaction(id: string): Promise<void> {
     await repoRestore(id)
     await this.load()
+    if (this.trash.length > 0) await this.loadTrash()
     this.touch()
+  }
+
+  /** Populates `trash`. Called when the Trash tab is opened, not on every load(). */
+  async loadTrash(): Promise<void> {
+    this.trash = await repoTrashedTransactions()
+  }
+
+  /** Bypasses soft-delete entirely — only reachable from the Trash tab (spec §9.4). */
+  async permanentlyDeleteTransaction(id: string): Promise<void> {
+    await repoPermanentDelete(id)
+    await this.loadTrash()
+  }
+
+  /** Empties the whole trash. Always requires typed confirmation in the UI (spec §9.4). */
+  async emptyTrash(): Promise<void> {
+    await Promise.all(this.trash.map((t) => repoPermanentDelete(t.id)))
+    await this.loadTrash()
   }
 
   async createCommitment(input: NewCommitmentInput): Promise<void> {

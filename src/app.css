@@ -439,6 +439,77 @@ button {
 
 /* ---- Riwayat ---- */
 
+.subtabs {
+  display: flex;
+  gap: 8px;
+  margin: 4px 0 12px;
+}
+
+.subtabs button {
+  flex: 1;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: none;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.subtabs button.active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.trash-actions {
+  display: flex;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.confirm-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-bottom: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--danger);
+  border-radius: 10px;
+  font-size: 0.85rem;
+}
+
+.confirm-panel input {
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: inherit;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.confirm-actions button {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+}
+
+.confirm-actions .danger {
+  background: var(--danger);
+  color: #fff;
+  border-color: var(--danger);
+}
+
+.confirm-actions .danger:disabled {
+  opacity: 0.4;
+}
+
 .day-group {
   display: flex;
   flex-direction: column;
