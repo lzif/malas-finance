@@ -9,12 +9,29 @@ Last updated: 2026-07-28
 
 ## Pick up here
 
-In order.
+Nothing blocking is left in Phase 1. Next up: Phase 2 (the Sadar dashboard).
 
-1. **Balance adjustment** (spec §7.4). Every formula stands on `spendableBalance`
-   being right; one forgotten transaction skews everything silently and there is
-   currently no way to correct it.
-2. **`manual` cycle mode in onboarding.** Reachable from settings only.
+Balance adjustment (was #1 here) is done — each wallet row on the Komitmen
+screen has a "sesuaikan saldo" action; entering the actual balance previews
+the difference and, on save, records it as a visible `#koreksi` transaction
+(`in` or `out`; `intent = 'routine'` for `out`, `intent = null` for `in` since
+§5.1 requires intent iff `out`) rather than overwriting anything silently
+(spec §7.4). Verified live in the browser: both directions on the same
+wallet (Rp 500.000 → 450.000 → 600.000 → 700.000), correct preview text
+("keluar"/"masuk") before each save, correct running balance after each,
+both transactions showing in Riwayat with the right sign, tag, and intent,
+no console errors.
+
+`manual` cycle mode in onboarding (was #2 here) is done — the third onboarding
+question now offers all three paths from spec §7.5, including "tahu tanggal
+masuk berikutnya, tapi tidak tetap" with a date picker clamped to today or
+later (bound to the reactive `appState.today`, not a raw `Date.now()`, so it
+can't go stale if onboarding is left open across midnight). Verified live in
+the browser: all 3 choices render, picking a manual date 4 days out and
+completing onboarding produced an anchor number of exactly Rp 100.000 (Rp
+500.000 balance / 5-day cycle) — proving `cycleManualEnd` was actually saved
+and used, not silently dropped to the 30-day rolling fallback (which would
+have shown ~Rp 16.700).
 
 Trash restore UI (was #1 here) is done — History has a Sampah sub-tab with
 restore and permanent-delete, typed `HAPUS` confirmation for entries at or
@@ -45,12 +62,12 @@ the CSS.
 | Data model, Dexie schema | done |
 | Repository integrity rules (§5.1) | done |
 | `domain/` pure functions + tests | done |
-| Onboarding | partial — 2 of 3 cycle paths; `manual` mode missing |
+| Onboarding | done — all 3 cycle paths (monthly-day, manual, rolling) |
 | Record screen, anchor number | done |
 | Anti-habituation mechanisms (§7.1) | done — all three |
 | Commitments, `bill` + `saving` (§4.3) | done |
 | Automatic backup (§9.1) | done — `Directory.Data` daily snapshots + weekly `Documents` copy verified on real device (2026-07-28); rotation-past-7-days untested (needs real week), uninstall-survival untested (no import UI yet, see Phase 4) |
-| Balance adjustment (§7.4) | **not started** |
+| Balance adjustment (§7.4) | done — "sesuaikan saldo" per wallet on the Komitmen screen, creates a visible `#koreksi` transaction |
 | Trash restore UI (§7.3) | done — Sampah sub-tab, restore, typed-confirm permanent delete (§9.4) |
 
 ## Phase 2 — Sadar (dashboard)
@@ -97,6 +114,14 @@ at single-user scale. None are forgotten; none are safe to forget.
 - **Backup lives in localStorage, not the filesystem.** Different eviction
   policy from IndexedDB, so it is real redundancy — but it is not the
   filesystem and shared-Documents copies §9.1 asks for.
+- **A downward `#koreksi` correction (`kind: 'out'`) counts toward
+  `dailySpendMap` (and so toward runway's daily average) on the day it is
+  entered**, even though the drift it corrects usually accrued on earlier,
+  unrecorded days. `dailySpendMap` only sums `out` transactions, so an upward
+  correction (`kind: 'in'`) is unaffected. Excluding the `out` case needs a
+  rule spec §7.4 does not state, and the alternative — leaving the average
+  built on a balance that was already known to be wrong — is worse. Only
+  matters for large corrections; not worth machinery at single-user scale.
 
 ## Sharpest risk
 

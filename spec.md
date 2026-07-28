@@ -584,7 +584,7 @@ Cycle (mode, anchor date, `endBuffer`), wallets (add/archive/reorder, mark `rese
 
 A setting that silently halves anchor numbers will be perceived as a bug, and trust in those numbers will not recover afterward.
 
-**sesuaikan saldo.** All mathematics in this document rests upon an accurate `spendableBalance`, and a single unrecorded transaction causes every number to drift silently. Therefore, each wallet has a "sesuaikan saldo" action: the user inputs their actual balance, and the app creates a **visible correction transaction** for the difference (`in` or `out`, `intent = 'routine'`, tag `#koreksi`).
+**sesuaikan saldo.** All mathematics in this document rests upon an accurate `spendableBalance`, and a single unrecorded transaction causes every number to drift silently. Therefore, each wallet has a "sesuaikan saldo" action: the user inputs their actual balance, and the app creates a **visible correction transaction** for the difference (`in` or `out`, tag `#koreksi`). `intent = 'routine'` for the `out` direction; the `in` direction carries `intent = null`, since §5.1 requires an intent if and only if `kind === 'out'`.
 
 The app never overwrites balances silently. Rewriting numbers without a trace ruins the entire history that forms the basis for runway and daily averages — and hides untracked money from the user, which is precisely the information they most need to be aware of.
 
