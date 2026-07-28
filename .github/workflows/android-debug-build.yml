@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - worktree-plan-capacitor-android-ci
     paths:
       - 'src/**'
       - 'android/**'
