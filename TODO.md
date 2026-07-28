@@ -108,7 +108,16 @@ Not started. Needs Capacitor, so it also loses the instant browser dev loop
   compute real new-wallet/new-commitment counts against local state, which
   **resolves the `previewBackup.walletCount` known-defect entry** that used to
   live in this file (computing the delta needed the current wallet list,
-  which only exists now that this UI does).
+  which only exists now that this UI does). Verified live in the browser: a
+  4-transaction fixture file (1 soft-deleted, amount 999.999) previewed as
+  "3 entri · 2 Jan s/d 4 Jan", "Masuk Rp 1.000.000 · Keluar Rp 165.000",
+  "Dompet baru: 2 · Komitmen baru: 1" — the Rp 165.000 figure (not
+  Rp 1.164.999) confirms the soft-deleted row was correctly excluded from the
+  preview, not just from the count. GANTI SEMUA's confirm button was
+  observed disabled until "GANTI" was typed, then enabled. A deliberately
+  corrupted (non-JSON) file produced exactly
+  `"Tidak ada entri yang bisa dibaca — berkas mungkin rusak"` with no preview
+  panel. "Unduh Markdown" triggered a download with no console errors.
 - **Markdown export (§9.5)** — done. `db/markdownExport.ts`, format documented
   in spec §9.5. Active transactions only, grouped by day newest-first,
   Indonesian intent labels, pipe/newline-safe note cells.
