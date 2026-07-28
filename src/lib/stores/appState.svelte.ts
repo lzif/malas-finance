@@ -5,7 +5,12 @@ import { untrack } from 'svelte'
 import { db, type Commitment, type Settings, type Transaction, type Wallet } from '../db/schema'
 import { backupNow, backupStatus, downloadBackup, scheduleBackup, type BackupStatus } from '../db/autoBackup'
 import { getSettings, updateSettings as repoUpdateSettings } from '../db/repo/settings'
-import { activeWallets, createWallet, spendableBalance as computeSpendableBalance } from '../db/repo/wallets'
+import {
+  activeWallets,
+  createWallet,
+  spendableBalance as computeSpendableBalance,
+  walletBalance as computeWalletBalance
+} from '../db/repo/wallets'
 import { addCommitment, allCommitments, deactivateCommitment, type NewCommitmentInput } from '../db/repo/commitments'
 import {
   addTransaction,
@@ -349,11 +354,48 @@ class AppState {
     })
   }
 
+  /** Current balance of one wallet, from the loaded transaction set (spec §4.1). */
+  walletBalance(wallet: Wallet): number {
+    return computeWalletBalance(wallet, this.transactions)
+  }
+
+  /**
+   * "sesuaikan saldo" (spec §7.4): the user reports what a wallet's balance
+   * actually is, and the app records the difference as a visible correction
+   * transaction — never a silent overwrite, since that would erase the
+   * discrepancy the user most needs to see.
+   */
+  async adjustWalletBalance(walletId: string, actualBalance: number): Promise<void> {
+    if (!Number.isInteger(actualBalance) || actualBalance < 0) {
+      throw new Error('actualBalance must be a non-negative integer')
+    }
+    const wallet = this.wallets.find((w) => w.id === walletId)
+    if (!wallet) throw new Error('wallet not found')
+
+    const diff = actualBalance - computeWalletBalance(wallet, this.transactions)
+    if (diff === 0) return
+
+    // The repository requires intent iff kind === 'out' (§5.1) — that rule
+    // outranks §7.4's flat "intent = 'routine'", which only ever anticipated
+    // the downward (out) direction.
+    await this.saveTransaction({
+      kind: diff > 0 ? 'in' : 'out',
+      amount: Math.abs(diff),
+      intent: diff > 0 ? null : 'routine',
+      tag: 'koreksi',
+      note: null,
+      walletId,
+      toWalletId: null,
+      commitmentId: null
+    })
+  }
+
   async completeOnboarding(input: {
     initialBalance: number
     seedDailySpend: number
-    cycleMode: 'monthly-day' | 'rolling'
+    cycleMode: 'monthly-day' | 'manual' | 'rolling'
     cycleAnchorDay: number
+    cycleManualEnd: string | null
   }): Promise<void> {
     await createWallet({ name: 'CASH', kind: 'spendable', initialBalance: input.initialBalance })
     // Must use the effective dayStartHour, not a hardcoded 0. If the two
@@ -365,7 +407,7 @@ class AppState {
       seedDailySpend: input.seedDailySpend,
       cycleMode: input.cycleMode,
       cycleAnchorDay: input.cycleAnchorDay,
-      cycleManualEnd: null,
+      cycleManualEnd: input.cycleManualEnd,
       startedAt
     })
     await this.load()

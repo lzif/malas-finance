@@ -3,8 +3,9 @@
   // moves money to a reserve wallet. Paid status is derived from transactions,
   // never stored, so removing a payment automatically makes it unpaid again.
   //
-  // Also hosts the backup panel (spec §9.1) — the status line is the only place
-  // the user can see whether their data is actually protected.
+  // Also hosts the wallet balance-adjustment panel (spec §7.4) and the backup
+  // panel (spec §9.1) — the status line is the only place the user can see
+  // whether their data is actually protected.
 
   import { fade, slide } from 'svelte/transition'
   import { flip } from 'svelte/animate'
@@ -13,7 +14,7 @@
   import { formatRupiah } from '../domain/money'
   import { dueOccurrence, isPaid } from '../domain/commitment'
   import { formatDateShort } from './formatDate'
-  import type { Commitment } from '../db/schema'
+  import type { Commitment, Wallet } from '../db/schema'
 
   let showForm = $state(false)
   let name = $state('')
@@ -28,6 +29,38 @@
   const valid = $derived(name.trim() !== '' && amount > 0)
 
   const status = $derived(appState.backupStatus)
+
+  // sesuaikan saldo (spec §7.4): correction is a visible transaction, never a
+  // silent overwrite, so the form only ever previews the difference — it
+  // never lets the user set a balance directly.
+  let adjustTarget = $state<string | null>(null)
+  let adjustText = $state('')
+  let adjustBusy = $state(false)
+
+  const adjustWallet = $derived(appState.wallets.find((w) => w.id === adjustTarget) ?? null)
+  const adjustCurrent = $derived(adjustWallet ? appState.walletBalance(adjustWallet) : 0)
+  const adjustActual = $derived(Math.floor(Number(adjustText) || 0))
+  const adjustDiff = $derived(adjustActual - adjustCurrent)
+  const adjustValid = $derived(adjustText !== '' && Number.isFinite(adjustActual) && adjustActual >= 0)
+
+  function openAdjust(w: Wallet) {
+    adjustTarget = w.id
+    adjustText = String(appState.walletBalance(w))
+  }
+
+  function cancelAdjust() {
+    adjustTarget = null
+    adjustText = ''
+  }
+
+  async function confirmAdjust() {
+    if (!adjustTarget || !adjustValid || adjustDiff === 0 || adjustBusy) return
+    adjustBusy = true
+    await appState.adjustWalletBalance(adjustTarget, adjustActual)
+    adjustBusy = false
+    adjustTarget = null
+    adjustText = ''
+  }
 
   function paid(c: Commitment): boolean {
     return isPaid(c, appState.transactions, appState.today)
@@ -115,6 +148,46 @@
   {:else}
     <button class="wide-save" onclick={() => (showForm = true)}>+ KOMITMEN</button>
   {/if}
+
+  <h2>Dompet</h2>
+  {#each appState.wallets as w (w.id)}
+    <div class="recent-item">
+      <span>
+        <span class="amount in">{formatRupiah(appState.walletBalance(w))}</span>
+        <span class="meta"> {w.name}{#if w.kind === 'reserve'} · cadangan{/if}</span>
+      </span>
+      <button class="row-delete" onclick={() => openAdjust(w)}>sesuaikan saldo</button>
+    </div>
+    {#if adjustTarget === w.id}
+      <div class="form-block" transition:slide={{ duration: prefersReducedMotion.current ? 0 : 200 }}>
+        <p class="hint">Saldo {w.name} sekarang: {formatRupiah(adjustCurrent)}</p>
+        <input
+          type="number"
+          inputmode="numeric"
+          min="0"
+          step="1"
+          placeholder="Saldo sebenarnya"
+          bind:value={adjustText}
+        />
+        {#if adjustValid && adjustDiff !== 0}
+          <p class="hint">
+            Selisih {formatRupiah(Math.abs(adjustDiff))} akan dicatat sebagai transaksi
+            {adjustDiff > 0 ? 'masuk' : 'keluar'} #koreksi.
+          </p>
+        {/if}
+        <div class="mode-row">
+          <button class="mode-btn" onclick={cancelAdjust}>Batal</button>
+          <button
+            class="mode-btn active"
+            disabled={!adjustValid || adjustDiff === 0 || adjustBusy}
+            onclick={confirmAdjust}
+          >
+            Simpan
+          </button>
+        </div>
+      </div>
+    {/if}
+  {/each}
 
   <h2>Cadangan</h2>
   <p class="hint" class:error={status.stale}>
