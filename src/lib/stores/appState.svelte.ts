@@ -1,6 +1,7 @@
 // stores/appState.svelte.ts — connects db to domain (spec §6, architecture).
 // The only place in the app that knows about both Dexie and pure domain/.
 
+import { untrack } from 'svelte'
 import { db, type Commitment, type Settings, type Transaction, type Wallet } from '../db/schema'
 import { backupNow, backupStatus, downloadBackup, scheduleBackup, type BackupStatus } from '../db/autoBackup'
 import { getSettings, updateSettings as repoUpdateSettings } from '../db/repo/settings'
@@ -234,7 +235,17 @@ class AppState {
   private backupStatusCache = $state<BackupStatus | null>(null)
 
   get backupStatus(): BackupStatus {
-    if (this.backupStatusCache === null) this.backupStatusCache = backupStatus()
+    if (this.backupStatusCache === null) {
+      // Read from a $derived (Commitments.svelte) — Svelte 5 forbids writing
+      // state as a side effect of a derived's evaluation, so the cache-fill
+      // write is untracked. The read that follows still establishes the
+      // normal reactive dependency on backupStatusCache.
+      const computed = backupStatus()
+      untrack(() => {
+        this.backupStatusCache = computed
+      })
+      return computed
+    }
     return this.backupStatusCache
   }
 

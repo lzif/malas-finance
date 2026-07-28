@@ -13,6 +13,16 @@
   --band-mendesak: #f08a3c;
   --band-terlampaui: #ff5c5c;
 
+  --glass-bg: rgba(255,255,255,0.06);
+  --glass-border: rgba(255,255,255,0.14);
+  --glass-blur: 14px;
+  --glass-shadow: 0 8px 32px rgba(0,0,0,0.35);
+  --motion-fast: 150ms;
+  --motion-med: 250ms;
+  --motion-slow: 400ms;
+  --ease-out: cubic-bezier(0.16,1,0.3,1);
+  --press-scale: 0.96;
+
   color-scheme: dark;
 }
 
@@ -24,6 +34,9 @@
     --border: #dcdce4;
     --text: #17171f;
     --text-dim: #6b6b7a;
+    --glass-bg: rgba(255,255,255,0.55);
+    --glass-border: rgba(20,20,30,0.10);
+    --glass-shadow: 0 8px 28px rgba(20,20,40,0.12);
     color-scheme: light;
   }
 }
@@ -35,10 +48,28 @@
 html, body {
   margin: 0;
   padding: 0;
-  background: var(--bg);
+  background:
+    radial-gradient(circle at 10% 10%, color-mix(in srgb, var(--accent) 8%, transparent) 0%, transparent 60%),
+    radial-gradient(circle at 90% 90%, color-mix(in srgb, var(--band-waspada) 8%, transparent) 0%, transparent 60%),
+    var(--bg);
+  background-attachment: fixed;
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   overscroll-behavior-y: none;
+}
+
+/* Placed after the base html,body rule (not inside the earlier light :root
+   block) so equal-specificity source order lets this win in light mode —
+   a media-scoped rule appearing BEFORE an unconditional same-selector rule
+   loses the cascade regardless of which media query matches. */
+@media (prefers-color-scheme: light) {
+  html, body {
+    background:
+      radial-gradient(circle at 10% 10%, color-mix(in srgb, var(--accent) 6%, transparent) 0%, transparent 60%),
+      radial-gradient(circle at 90% 90%, color-mix(in srgb, var(--band-waspada) 6%, transparent) 0%, transparent 60%),
+      var(--bg);
+    background-attachment: fixed;
+  }
 }
 
 #app {
@@ -64,13 +95,33 @@ button {
   gap: 14px;
 }
 
+/* ---- Screen track (swipe/tab transition wrapper, App.svelte) ---- */
+
+.screen-track {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow-x: hidden;
+  touch-action: pan-y;
+}
+
+.screen-slide {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
 /* ---- Anchor number ---- */
 
 .anchor {
   padding: 18px 16px;
   border-radius: 16px;
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  box-shadow: var(--glass-shadow);
   transition: background 0.25s, border-color 0.25s;
 }
 
@@ -118,6 +169,12 @@ button {
   font-size: 0.95rem;
   font-weight: 600;
   color: var(--text-dim);
+  transition: transform var(--motion-fast) var(--ease-out), background var(--motion-fast) var(--ease-out);
+}
+
+.mode-btn:active {
+  transform: scale(var(--press-scale));
+  transition: transform var(--motion-fast) var(--ease-out);
 }
 
 .mode-btn.active {
@@ -149,10 +206,13 @@ button {
   border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--surface);
+  transition: transform var(--motion-fast) var(--ease-out), background var(--motion-fast) var(--ease-out);
 }
 
 .keypad-grid button:active {
   background: var(--surface-2);
+  transform: scale(var(--press-scale));
+  transition: transform var(--motion-fast) var(--ease-out);
 }
 
 /* Backspace occupies the last cell of the 3×4 grid (bottom right, closest to
@@ -179,6 +239,12 @@ button {
   background: var(--surface);
   font-size: 0.85rem;
   color: var(--text-dim);
+  transition: transform var(--motion-fast) var(--ease-out), background var(--motion-fast) var(--ease-out);
+}
+
+.chip:active {
+  transform: scale(var(--press-scale));
+  transition: transform var(--motion-fast) var(--ease-out);
 }
 
 .chip.selected {
@@ -227,10 +293,13 @@ button {
   font-size: 1rem;
   font-weight: 700;
   letter-spacing: 0.02em;
+  transition: transform var(--motion-fast) var(--ease-out), background var(--motion-fast) var(--ease-out);
 }
 
 .intent-grid button:active {
   background: var(--surface-2);
+  transform: scale(var(--press-scale));
+  transition: transform var(--motion-fast) var(--ease-out);
 }
 
 .intent-grid button:disabled,
@@ -247,6 +316,12 @@ button {
   color: white;
   font-size: 1.05rem;
   font-weight: 700;
+  transition: transform var(--motion-fast) var(--ease-out), background var(--motion-fast) var(--ease-out);
+}
+
+.wide-save:active {
+  transform: scale(var(--press-scale));
+  transition: transform var(--motion-fast) var(--ease-out);
 }
 
 /* ---- Recent entries ---- */
@@ -289,11 +364,14 @@ button {
   color: var(--text-dim);
   font-size: 0.8rem;
   cursor: pointer;
+  transition: transform var(--motion-fast) var(--ease-out), background var(--motion-fast) var(--ease-out);
 }
 
 .row-delete:active {
   background: var(--surface-2);
   color: var(--danger);
+  transform: scale(var(--press-scale));
+  transition: transform var(--motion-fast) var(--ease-out);
 }
 
 /* ---- Snackbar ---- */
@@ -305,15 +383,17 @@ button {
   transform: translateX(-50%);
   width: calc(100% - 32px);
   max-width: 448px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
   border-radius: 12px;
   padding: 12px 14px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  box-shadow: var(--glass-shadow);
   z-index: 20;
 }
 
@@ -329,8 +409,11 @@ button {
 
 .nav {
   display: flex;
-  border-top: 1px solid var(--border);
-  background: var(--surface);
+  border-top: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  box-shadow: var(--glass-shadow);
 }
 
 .nav button {
@@ -341,6 +424,12 @@ button {
   font-size: 0.9rem;
   font-weight: 600;
   color: var(--text-dim);
+  transition: transform var(--motion-fast) var(--ease-out), background var(--motion-fast) var(--ease-out);
+}
+
+.nav button:active {
+  transform: scale(var(--press-scale));
+  transition: transform var(--motion-fast) var(--ease-out);
 }
 
 .nav button.active {
@@ -402,6 +491,12 @@ button {
   background: var(--surface);
   font-size: 1rem;
   text-align: left;
+  transition: transform var(--motion-fast) var(--ease-out), background var(--motion-fast) var(--ease-out);
+}
+
+.onboarding .choice-list button:active {
+  transform: scale(var(--press-scale));
+  transition: transform var(--motion-fast) var(--ease-out);
 }
 
 .onboarding .choice-list button.selected {
@@ -423,6 +518,12 @@ button {
   color: white;
   font-weight: 700;
   font-size: 1rem;
+  transition: transform var(--motion-fast) var(--ease-out), background var(--motion-fast) var(--ease-out);
+}
+
+.btn-primary:active {
+  transform: scale(var(--press-scale));
+  transition: transform var(--motion-fast) var(--ease-out);
 }
 
 .btn-primary:disabled {
@@ -473,8 +574,14 @@ button {
   gap: 8px;
   padding: 10px 12px;
   margin-bottom: 6px;
-  background: var(--surface-2);
+  background: var(--glass-bg);
+  /* Border stays --danger, not --glass-border: this panel is the typed-HAPUS
+     permanent-delete confirmation and must read as visually distinct from an
+     ordinary glass card (spec §9.4). */
   border: 1px solid var(--danger);
+  backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  box-shadow: var(--glass-shadow);
   border-radius: 10px;
   font-size: 0.85rem;
 }
@@ -557,9 +664,12 @@ button {
   flex-direction: column;
   gap: 8px;
   padding: 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  box-shadow: var(--glass-shadow);
   border-radius: 10px;
-  background: var(--surface);
 }
 
 .form-block input {
@@ -580,4 +690,13 @@ p.hint.error {
 .row-delete:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

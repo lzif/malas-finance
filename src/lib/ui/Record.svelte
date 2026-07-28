@@ -7,6 +7,9 @@
   // allowance is exceeded, tomorrow's reduced allowance is stated outright.
 
   import { onDestroy } from 'svelte'
+  import { fly, fade, slide } from 'svelte/transition'
+  import { flip } from 'svelte/animate'
+  import { prefersReducedMotion } from 'svelte/motion'
   import { appState } from '../stores/appState.svelte'
   import { formatRupiah, formatNumber } from '../domain/money'
   import { allowanceBand, projectedOverspend } from '../domain/allowance'
@@ -48,6 +51,7 @@
   onDestroy(() => {
     for (const t of snackTimers) clearTimeout(t)
     snackTimers.clear()
+    if (pulseTimer) clearTimeout(pulseTimer)
   })
 
   const amount = $derived(Number(amountDigits))
@@ -66,6 +70,33 @@
       ? projectedOverspend(amount, allowance.remainingAllowance)
       : 0
   )
+
+  // Anchor pulse (anti-habituation mechanism 1, spec §7.1) — a brief scale
+  // bounce whenever the displayed remaining allowance actually changes, so a
+  // structural visual event marks the moment, not just a silent digit swap.
+  // Skips the first run: mounting with an initial value must not pulse.
+  let pulse = $state(false)
+  let pulseSeen = false
+  let pulseTimer: ReturnType<typeof setTimeout> | null = null
+  $effect(() => {
+    // Read through explicit locals (not bare optional-chain expressions) so the
+    // dependency this effect tracks is unambiguous: `allowance` itself, plus
+    // its two fields, every time — not just "allowance" when it's null.
+    const _remaining = allowance?.remainingAllowance ?? null
+    const _status = allowance?.status ?? null
+    void _remaining
+    void _status
+    if (!pulseSeen) {
+      pulseSeen = true
+      return
+    }
+    if (pulseTimer) clearTimeout(pulseTimer)
+    pulse = true
+    pulseTimer = setTimeout(() => {
+      pulse = false
+      pulseTimer = null
+    }, 260)
+  })
 
   // Guard against a slow query for the previous mode resolving after the user
   // has already switched: without the token, income tags could land while the
@@ -178,12 +209,12 @@
   <div class="anchor band-{band}">
     {#if allowance && cycle}
       {#if allowance.status === 'minus'}
-        <div class="anchor-value">Rp 0</div>
+        <div class="anchor-value" class:pulse>Rp 0</div>
         <div class="anchor-sub danger">
           Kamu minus {formatRupiah(-allowance.availableFunds)} sampai {formatDateShort(cycle.end)}
         </div>
       {:else if allowance.status === 'lewat'}
-        <div class="anchor-value">Rp 0</div>
+        <div class="anchor-value" class:pulse>Rp 0</div>
         <div class="anchor-sub danger">Lewat {formatRupiah(-allowance.remainingAllowance)} hari ini</div>
         {#if tomorrowAllowance !== null}
           <div class="anchor-sub">
@@ -191,7 +222,7 @@
           </div>
         {/if}
       {:else}
-        <div class="anchor-value">{formatRupiah(allowance.remainingAllowance)}</div>
+        <div class="anchor-value" class:pulse>{formatRupiah(allowance.remainingAllowance)}</div>
         <div class="anchor-sub">
           dari {formatRupiah(allowance.allowanceToday)} · runway {runwayText}
         </div>
@@ -256,7 +287,9 @@
   {#if mode === 'out'}
     <div class="warning-line">
       {#if overspend > 0}
-        Ini akan melewati jatah {formatRupiah(overspend)}.
+        <div transition:slide={{ duration: prefersReducedMotion.current ? 0 : 200 }}>
+          Ini akan melewati jatah {formatRupiah(overspend)}.
+        </div>
       {/if}
     </div>
     <div class="intent-grid">
@@ -289,10 +322,39 @@
 {#if snacks.length > 0}
   <div class="snackbar-stack">
     {#each snacks as snack (snack.id)}
-      <div class="snackbar">
+      <div
+        class="snackbar"
+        in:fly={{ y: 16, duration: prefersReducedMotion.current ? 0 : 200 }}
+        out:fade={{ duration: prefersReducedMotion.current ? 0 : 150 }}
+        animate:flip={{ duration: prefersReducedMotion.current ? 0 : 200 }}
+      >
         <span>{snack.text}</span>
         <button onclick={() => dismissSnack(snack)}>BATAL</button>
       </div>
     {/each}
   </div>
 {/if}
+
+<style>
+  .anchor-value.pulse {
+    animation: pulse-value 250ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  @keyframes pulse-value {
+    0% {
+      transform: scale(1);
+    }
+    40% {
+      transform: scale(1.05);
+    }
+    100% {
+      transform: scale(1);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .anchor-value.pulse {
+      animation: none;
+    }
+  }
+</style>

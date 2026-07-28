@@ -5,6 +5,9 @@
   // fast path back, the Trash tab is the permanent one (unlimited retention,
   // no automatic cleanup).
 
+  import { fly, fade, slide } from 'svelte/transition'
+  import { flip } from 'svelte/animate'
+  import { prefersReducedMotion } from 'svelte/motion'
   import { appState } from '../stores/appState.svelte'
   import { formatRupiah } from '../domain/money'
   import { formatDateShort } from './formatDate'
@@ -107,7 +110,7 @@
         <div class="day-group">
           <h3>{formatDateShort(group.dayKey)} · {formatRupiah(subtotal(group.items))}</h3>
           {#each group.items as tx (tx.id)}
-            <div class="recent-item">
+            <div class="recent-item" animate:flip={{ duration: prefersReducedMotion.current ? 0 : 200 }}>
               <span>
                 <span class="amount {tx.kind}">{tx.kind === 'out' ? '-' : '+'}{formatRupiah(tx.amount)}</span>
                 {#if tx.tag}<span class="meta"> #{tx.tag}</span>{/if}
@@ -125,7 +128,7 @@
     {:else}
       <button class="row-delete" onclick={requestEmptyTrash}>kosongkan sampah</button>
       {#if confirmTarget === 'ALL'}
-        <div class="confirm-panel">
+        <div class="confirm-panel" transition:slide={{ duration: prefersReducedMotion.current ? 0 : 200 }}>
           <p>Ketik <strong>HAPUS</strong> untuk menghapus permanen seluruh {appState.trash.length} entri di sampah. Tidak bisa dibatalkan.</p>
           <input type="text" bind:value={confirmText} placeholder="HAPUS" />
           <div class="confirm-actions">
@@ -153,7 +156,7 @@
           </span>
         </div>
         {#if confirmTarget === tx.id}
-          <div class="confirm-panel">
+          <div class="confirm-panel" transition:slide={{ duration: prefersReducedMotion.current ? 0 : 200 }}>
             <p>
               {formatRupiah(appState.settings?.bigDeleteThreshold ?? 0)} ke atas butuh konfirmasi. Ketik
               <strong>HAPUS</strong> untuk menghapus permanen {formatRupiah(tx.amount)}. Tidak bisa dibatalkan.
@@ -173,7 +176,7 @@
 </div>
 
 {#if snackbar}
-  <div class="snackbar">
+  <div class="snackbar" in:fly={{ y: 16, duration: prefersReducedMotion.current ? 0 : 200 }} out:fade={{ duration: prefersReducedMotion.current ? 0 : 150 }}>
     <span>{snackbar.text}</span>
     <button onclick={undoLast}>BATAL</button>
   </div>

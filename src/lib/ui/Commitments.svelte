@@ -6,6 +6,9 @@
   // Also hosts the backup panel (spec §9.1) — the status line is the only place
   // the user can see whether their data is actually protected.
 
+  import { fade, slide } from 'svelte/transition'
+  import { flip } from 'svelte/animate'
+  import { prefersReducedMotion } from 'svelte/motion'
   import { appState } from '../stores/appState.svelte'
   import { formatRupiah } from '../domain/money'
   import { dueOccurrence, isPaid } from '../domain/commitment'
@@ -73,7 +76,7 @@
     <p class="empty-state">Belum ada komitmen.</p>
   {:else}
     {#each appState.commitments.filter((c) => c.active) as c (c.id)}
-      <div class="recent-item">
+      <div class="recent-item" animate:flip={{ duration: prefersReducedMotion.current ? 0 : 200 }}>
         <span>
           <span class="amount out">{formatRupiah(c.amount)}</span>
           <span class="meta"> {c.name} · tgl {c.dueDay}</span>
@@ -92,7 +95,7 @@
   {/if}
 
   {#if showForm}
-    <div class="form-block">
+    <div class="form-block" transition:slide={{ duration: prefersReducedMotion.current ? 0 : 200 }}>
       <input type="text" placeholder="Nama (mis. Listrik)" bind:value={name} />
       <input type="number" inputmode="numeric" min="1" step="1" placeholder="Jumlah" bind:value={amountText} />
       <input type="number" inputmode="numeric" min="1" max="31" placeholder="Tanggal jatuh tempo" bind:value={dueDayText} />
@@ -130,5 +133,5 @@
       Unduh berkas
     </button>
   </div>
-  {#if message}<p class="hint">{message}</p>{/if}
+  {#if message}<p class="hint" transition:fade={{ duration: prefersReducedMotion.current ? 0 : 200 }}>{message}</p>{/if}
 </div>
