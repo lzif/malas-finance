@@ -78,6 +78,8 @@ Before finishing, confirm the main checkout is clean and say so if it is not.
 
 **Then verify the findings yourself before accepting any.** Reviewers overstate, misread intent, and occasionally argue for the exact opposite of what is correct — that has happened more than once here, including a review that proposed a commitment-window bound which turned out to over-count. Open the code, confirm each claim, and say plainly which you reject and why.
 
+**Sync the docs to match reality before ending the session.** `TODO.md` says where the project actually is — a finished item left marked `not started` there is a lie that costs the next session a wasted re-read of code to discover the truth. Update its status and its "Pick up here" order every time a listed item gets built. If the work also pinned down a concrete detail `spec.md` left open — a literal string, a threshold, a confirmation word — add it to `spec.md` too, in the same style as existing entries (spec already quotes literals like the import confirmation word `GANTI` verbatim; a new one like a delete-confirmation word belongs there the same way). Don't leave a decision only in code and a commit message: `spec.md` and `TODO.md` are what the next session reads first, before the code.
+
 ## Android / Capacitor
 
 The stack includes Capacitor 8 (`@capacitor/core`, `@capacitor/filesystem`, `@capacitor/android`) and a committed `android/` platform directory, added to unblock filesystem-backed automatic backup (spec §9.1) and Phase 3 (Voice/notifications) — both need native APIs the web build doesn't have.

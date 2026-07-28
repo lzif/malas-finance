@@ -714,8 +714,8 @@ Corrupted file, invalid JSON, or zero valid entries → *"Tidak ada entri yang b
 
 - Delete → trash (`deletedAt`), always recoverable.
 - No swipe-to-delete.
-- Permanently deleting an entry with `amount ≥ bigDeleteThreshold` (default Rp 1.000.000) requires **typed confirmation**.
-- Emptying the entire trash requires typed confirmation regardless of the amount.
+- Permanently deleting an entry with `amount ≥ bigDeleteThreshold` (default Rp 1.000.000) requires **typed confirmation** — type `HAPUS`, same pattern as §9.2's `GANTI`.
+- Emptying the entire trash requires typed confirmation (`HAPUS`) regardless of the amount.
 - Wallets still referenced by active transactions cannot be deleted — only archived.
 
 ---
