@@ -3,6 +3,9 @@
 
 import Dexie, { type Table } from 'dexie'
 import type { Kind } from '../domain/types'
+import type { Commitment } from '../domain/commitment'
+
+export type { Commitment }
 
 export type Intent = 'planned' | 'routine' | 'impulse' | 'emergency'
 
@@ -30,16 +33,6 @@ export interface Wallet {
   initialBalance: number
   archived: boolean
   order: number
-}
-
-export interface Commitment {
-  id: string
-  name: string
-  amount: number
-  kind: 'bill' | 'saving'
-  dueDay: number
-  walletId: string | null
-  active: boolean
 }
 
 export interface NotifSettings {

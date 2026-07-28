@@ -103,3 +103,24 @@ export function projectedOverspend(amount: number, remainingAllowanceNow: number
   const remainingAfter = remainingAllowanceNow - amount
   return remainingAfter < 0 ? -remainingAfter : 0
 }
+
+/**
+ * Projects tomorrow's daily allowance based on current spendable balance.
+ * Implements the third anti-habituation mechanism from spec §7.1: 'state the
+ * future consequence outright' — when today's allowance is exceeded, show
+ * the user what tomorrow's allowance drops to.
+ *
+ * Note: There is no add-back of today's spending here (unlike computeAllowance)
+ * because tomorrow's spentToday is zero by definition, so the current balance
+ * is already tomorrow's basis.
+ */
+export function projectedTomorrowAllowance(input: {
+  spendableBalance: number
+  unpaidCommitments: number
+  endBuffer: number
+  daysRemaining: number
+}): number {
+  const daysLeftTomorrow = Math.max(1, input.daysRemaining - 1)
+  const available = input.spendableBalance - input.unpaidCommitments - input.endBuffer
+  return available > 0 ? Math.floor(available / daysLeftTomorrow) : 0
+}

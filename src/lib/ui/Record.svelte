@@ -1,10 +1,12 @@
 <script lang="ts">
   // Record (home screen) — spec §7.1. The anchor number sits above the form,
   // intent is required via a 2×2 grid that DOUBLES as the save button, and
-  // two mandatory anti-habituation mechanisms: (1) color/weight follow the
+  // three mandatory anti-habituation mechanisms: (1) color/weight follow the
   // percentage of the allowance used, (2) a warning line appears before
-  // saving if the amount would exceed the remaining allowance.
+  // saving if the amount would exceed the remaining allowance, (3) once the
+  // allowance is exceeded, tomorrow's reduced allowance is stated outright.
 
+  import { onDestroy } from 'svelte'
   import { appState } from '../stores/appState.svelte'
   import { formatRupiah, formatNumber } from '../domain/money'
   import { allowanceBand, projectedOverspend } from '../domain/allowance'
@@ -29,13 +31,30 @@
   let tagOptions = $state<string[]>([])
   let saving = $state(false)
 
-  let snackbar = $state<{ text: string; undo: () => Promise<void> } | null>(null)
-  let snackbarTimeout: ReturnType<typeof setTimeout> | null = null
+  interface Snack {
+    id: number
+    text: string
+    undo: () => Promise<void>
+  }
+
+  // A queue, not a single slot. Two saves within five seconds used to leave the
+  // first one un-undoable: the second replaced it and cleared its timer, so a
+  // mistyped amount corrected immediately afterwards became permanent.
+  let snacks = $state<Snack[]>([])
+  let snackSeq = 0
+  // Timers outlive the component otherwise, and fire against a destroyed one.
+  const snackTimers = new Set<ReturnType<typeof setTimeout>>()
+
+  onDestroy(() => {
+    for (const t of snackTimers) clearTimeout(t)
+    snackTimers.clear()
+  })
 
   const amount = $derived(Number(amountDigits))
   const walletId = $derived(appState.wallets[0]?.id ?? '')
   const allowance = $derived(appState.allowance)
   const cycle = $derived(appState.cycle)
+  const tomorrowAllowance = $derived(appState.tomorrowAllowance)
   const band = $derived(allowanceBand(allowance?.percentUsed ?? null))
   const runwayText = $derived(
     appState.runway
@@ -48,10 +67,15 @@
       : 0
   )
 
+  // Guard against a slow query for the previous mode resolving after the user
+  // has already switched: without the token, income tags could land while the
+  // form is back on expense.
+  let tagRequest = 0
   $effect(() => {
     const m = mode
+    const token = ++tagRequest
     appState.topTags(m).then((tags) => {
-      tagOptions = tags
+      if (token === tagRequest) tagOptions = tags
     })
   })
 
@@ -86,19 +110,18 @@
   }
 
   function fireSnackbar(text: string, undo: () => Promise<void>) {
-    if (snackbarTimeout) clearTimeout(snackbarTimeout)
-    snackbar = { text, undo }
-    snackbarTimeout = setTimeout(() => {
-      snackbar = null
+    const id = ++snackSeq
+    snacks = [...snacks, { id, text, undo }]
+    const timer = setTimeout(() => {
+      snacks = snacks.filter((s) => s.id !== id)
+      snackTimers.delete(timer)
     }, 5000)
+    snackTimers.add(timer)
   }
 
-  async function undoLast() {
-    if (!snackbar) return
-    const undo = snackbar.undo
-    snackbar = null
-    if (snackbarTimeout) clearTimeout(snackbarTimeout)
-    await undo()
+  async function dismissSnack(snack: Snack) {
+    snacks = snacks.filter((s) => s.id !== snack.id)
+    await snack.undo()
   }
 
   async function saveExpense(intent: Intent) {
@@ -162,6 +185,11 @@
       {:else if allowance.status === 'lewat'}
         <div class="anchor-value">Rp 0</div>
         <div class="anchor-sub danger">Lewat {formatRupiah(-allowance.remainingAllowance)} hari ini</div>
+        {#if tomorrowAllowance !== null}
+          <div class="anchor-sub">
+            Jatah besok turun jadi {formatRupiah(tomorrowAllowance)}
+          </div>
+        {/if}
       {:else}
         <div class="anchor-value">{formatRupiah(allowance.remainingAllowance)}</div>
         <div class="anchor-sub">
@@ -258,9 +286,13 @@
   </div>
 </div>
 
-{#if snackbar}
-  <div class="snackbar">
-    <span>{snackbar.text}</span>
-    <button onclick={undoLast}>BATAL</button>
+{#if snacks.length > 0}
+  <div class="snackbar-stack">
+    {#each snacks as snack (snack.id)}
+      <div class="snackbar">
+        <span>{snack.text}</span>
+        <button onclick={() => dismissSnack(snack)}>BATAL</button>
+      </div>
+    {/each}
   </div>
 {/if}

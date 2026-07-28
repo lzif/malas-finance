@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { allowanceBand, computeAllowance, projectedOverspend } from './allowance'
+import { allowanceBand, computeAllowance, projectedOverspend, projectedTomorrowAllowance } from './allowance'
 import type { AllowanceInput } from './allowance'
 
 function base(overrides: Partial<AllowanceInput> = {}): AllowanceInput {
@@ -173,5 +173,65 @@ describe('projectedOverspend — intervention at the moment of decision', () => 
 
   it('returns the overspend amount when the amount exceeds the remaining allowance', () => {
     expect(projectedOverspend(32_500, 20_000)).toBe(12_500)
+  })
+})
+
+describe('projectedTomorrowAllowance', () => {
+  it('calculates tomorrow allowance in normal case', () => {
+    const result = projectedTomorrowAllowance({
+      spendableBalance: 1000,
+      unpaidCommitments: 200,
+      endBuffer: 100,
+      daysRemaining: 5
+    })
+    expect(result).toBe(175)
+  })
+
+  it('handles last day of cycle (daysRemaining === 1) without dividing by zero or going negative', () => {
+    const result = projectedTomorrowAllowance({
+      spendableBalance: 500,
+      unpaidCommitments: 100,
+      endBuffer: 100,
+      daysRemaining: 1
+    })
+    expect(result).toBe(300)
+  })
+
+  it('returns 0 when available <= 0', () => {
+    const zeroAvailable = projectedTomorrowAllowance({
+      spendableBalance: 200,
+      unpaidCommitments: 100,
+      endBuffer: 100,
+      daysRemaining: 3
+    })
+    expect(zeroAvailable).toBe(0)
+
+    const negativeAvailable = projectedTomorrowAllowance({
+      spendableBalance: 100,
+      unpaidCommitments: 200,
+      endBuffer: 100,
+      daysRemaining: 3
+    })
+    expect(negativeAvailable).toBe(0)
+  })
+
+  it('lowers projection when overspending today versus not overspending', () => {
+    const baseInput = {
+      unpaidCommitments: 100,
+      endBuffer: 100,
+      daysRemaining: 4
+    }
+
+    const notOverspent = projectedTomorrowAllowance({
+      ...baseInput,
+      spendableBalance: 1000
+    })
+
+    const overspent = projectedTomorrowAllowance({
+      ...baseInput,
+      spendableBalance: 700
+    })
+
+    expect(overspent).toBeLessThan(notOverspent)
   })
 })
