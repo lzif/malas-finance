@@ -92,6 +92,21 @@ export async function restore(id: string): Promise<void> {
   await db.transactions.update(id, { deletedAt: null, updatedAt: Date.now() })
 }
 
+/** Trashed entries, most recently deleted first (spec §7.3). */
+export async function trashedTransactions(): Promise<Transaction[]> {
+  const rows = await db.transactions.toArray()
+  return rows.filter((t) => t.deletedAt !== null).sort((a, b) => b.deletedAt! - a.deletedAt!)
+}
+
+/**
+ * Actually remove a row, bypassing soft-delete. Only ever called from the
+ * Trash tab (spec §9.4) — everywhere else, deletion must go through
+ * `softDelete` so the entry stays recoverable.
+ */
+export async function permanentDelete(id: string): Promise<void> {
+  await db.transactions.delete(id)
+}
+
 export async function activeTransactionsForDay(dayKey: string): Promise<Transaction[]> {
   const rows = await db.transactions.where('dayKey').equals(dayKey).toArray()
   return rows.filter((t) => t.deletedAt === null)

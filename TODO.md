@@ -11,12 +11,16 @@ Last updated: 2026-07-28
 
 In order.
 
-1. **Trash restore UI.** Soft delete works and the 5-second snackbar can undo,
-   but once that window closes a deleted entry is unreachable.
-2. **Balance adjustment** (spec §7.4). Every formula stands on `spendableBalance`
+1. **Balance adjustment** (spec §7.4). Every formula stands on `spendableBalance`
    being right; one forgotten transaction skews everything silently and there is
    currently no way to correct it.
-3. **`manual` cycle mode in onboarding.** Reachable from settings only.
+2. **`manual` cycle mode in onboarding.** Reachable from settings only.
+
+Trash restore UI (was #1 here) is done — History has a Sampah sub-tab with
+restore and permanent-delete, typed `HAPUS` confirmation for entries at or
+above `bigDeleteThreshold` and for emptying the trash entirely (spec §9.4).
+Verified live in the browser: delete → restore, delete → permanent-delete
+(both below and at-threshold amounts), empty-trash confirmation.
 
 Filesystem backup (was #1 here) is done — Capacitor is in, `Directory.Data`
 snapshots + weekly `Documents` copy verified on a real device 2026-07-28.
@@ -47,7 +51,7 @@ the CSS.
 | Commitments, `bill` + `saving` (§4.3) | done |
 | Automatic backup (§9.1) | done — `Directory.Data` daily snapshots + weekly `Documents` copy verified on real device (2026-07-28); rotation-past-7-days untested (needs real week), uninstall-survival untested (no import UI yet, see Phase 4) |
 | Balance adjustment (§7.4) | **not started** |
-| Trash restore UI (§7.3) | **not started** — soft delete works, undo is snackbar-only |
+| Trash restore UI (§7.3) | done — Sampah sub-tab, restore, typed-confirm permanent delete (§9.4) |
 
 ## Phase 2 — Sadar (dashboard)
 
