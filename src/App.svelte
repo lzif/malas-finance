@@ -7,8 +7,9 @@
   import Record from './lib/ui/Record.svelte'
   import History from './lib/ui/History.svelte'
   import Commitments from './lib/ui/Commitments.svelte'
+  import Settings from './lib/ui/Settings.svelte'
 
-  const SCREENS = ['record', 'history', 'commitments'] as const
+  const SCREENS = ['record', 'history', 'commitments', 'settings'] as const
   type Screen = (typeof SCREENS)[number]
 
   let screen = $state<Screen>('record')
@@ -50,6 +51,24 @@
   onMount(() => {
     appState.load()
   })
+
+  // Reschedules every enabled notification (spec §8.5) once onboarding data
+  // has loaded, AND again on every calendar-day rollover while the app stays
+  // open — a WebView backgrounded (not killed) across midnight never re-runs
+  // onMount, so relying on it alone would leave the "no records yet" ids
+  // pinned to stale dates. `appState.today` is reactive (ticked by
+  // startClock's interval + visibilitychange), so this effect re-evaluates
+  // on every tick; `lastNotifDay` guards it down to firing only on an actual
+  // day change, not every 30s tick.
+  let lastNotifDay = ''
+  $effect(() => {
+    const day = appState.today
+    const ready = appState.onboarded
+    if (ready && day !== lastNotifDay) {
+      lastNotifDay = day
+      void appState.initNotifications()
+    }
+  })
 </script>
 
 {#if !appState.loaded}
@@ -76,8 +95,10 @@
           <Record />
         {:else if screen === 'history'}
           <History />
-        {:else}
+        {:else if screen === 'commitments'}
           <Commitments />
+        {:else}
+          <Settings />
         {/if}
       </div>
     {/key}
@@ -87,6 +108,9 @@
     <button class:active={screen === 'history'} onclick={() => goTo('history')}>Riwayat</button>
     <button class:active={screen === 'commitments'} onclick={() => goTo('commitments')}>
       Komitmen
+    </button>
+    <button class:active={screen === 'settings'} onclick={() => goTo('settings')}>
+      Setelan
     </button>
   </nav>
 {/if}

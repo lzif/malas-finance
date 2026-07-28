@@ -6,6 +6,8 @@
   import { prefersReducedMotion } from 'svelte/motion'
   import { appState } from '../stores/appState.svelte'
   import { formatRupiah } from '../domain/money'
+  import { checkExactAlarmSetting, openExactAlarmSettings } from '../notify/diagnostics'
+  import type { NotifSettings } from '../db/schema'
 
   let step = $state(1)
   let direction = $state(1)
@@ -15,6 +17,21 @@
   let anchorDay = $state('1')
   let manualEnd = $state('')
   let submitting = $state(false)
+
+  // Fourth screen (spec §7.5): notification permission + battery/exact-alarm
+  // link (spec §8.5). `exactAlarmSupported` gates whether the settings-link
+  // button is shown at all — off Android (browser dev, iOS) there is nothing
+  // for it to open.
+  let exactAlarmSupported = $state(false)
+  let checkedExactAlarm = false
+  $effect(() => {
+    if (step === 4 && !checkedExactAlarm) {
+      checkedExactAlarm = true
+      checkExactAlarmSetting().then((s) => {
+        exactAlarmSupported = s !== 'unsupported'
+      })
+    }
+  })
 
   const initialBalanceNum = $derived(Math.floor(Number(initialBalance) || 0))
   const seedNum = $derived(Math.floor(Number(seedDailySpend) || 0))
@@ -49,16 +66,32 @@
   )
   const cycleValid = $derived(cyclePath !== null && (cyclePath !== 'manual' || manualEndValid))
 
-  async function complete() {
+  /** Common finish, shared by both step-4 actions (spec §7.5) — only the notif patch differs. */
+  async function complete(notif?: Partial<NotifSettings>) {
     submitting = true
     await appState.completeOnboarding({
       initialBalance: initialBalanceNum,
       seedDailySpend: seedNum,
       cycleMode,
       cycleAnchorDay: cyclePath === 'monthly' ? anchorDayNum : 1,
-      cycleManualEnd: cyclePath === 'manual' ? manualEnd : null
+      cycleManualEnd: cyclePath === 'manual' ? manualEnd : null,
+      notif
     })
     submitting = false
+  }
+
+  /** "Aktifkan & Mulai" — only turns the four toggles on if permission was actually granted. */
+  async function enableNotificationsAndFinish() {
+    const granted = await appState.requestNotificationPermission()
+    await complete(
+      granted
+        ? { allowanceExceeded: true, noEntryReminder: true, dailySummary: true, weeklyRecap: true }
+        : undefined
+    )
+  }
+
+  async function openBatterySettings() {
+    await openExactAlarmSettings()
   }
 </script>
 
@@ -136,10 +169,28 @@
           <button class="btn-text" onclick={back}>Kembali</button>
           <button
             class="btn-primary"
-            disabled={!cycleValid || submitting || !initialBalanceValid || !seedValid}
-            onclick={complete}
+            disabled={!cycleValid || !initialBalanceValid || !seedValid}
+            onclick={next}
           >
-            Mulai
+            Lanjut
+          </button>
+        </div>
+      {:else if step === 4}
+        <h1>Aktifkan notifikasi?</h1>
+        <p class="hint">
+          Empat pengingat opsional: jatah harian lewat, belum mencatat, rekap harian, dan rekap
+          mingguan. Bisa diubah kapan saja lewat Setelan.
+        </p>
+        {#if exactAlarmSupported}
+          <p class="hint">
+            Supaya pengingat tidak dimatikan sistem, buka pengaturan alarm presisi juga.
+          </p>
+          <button class="btn-text" onclick={openBatterySettings}>Buka pengaturan alarm</button>
+        {/if}
+        <div class="actions">
+          <button class="btn-text" disabled={submitting} onclick={() => complete()}>Lewati</button>
+          <button class="btn-primary" disabled={submitting} onclick={enableNotificationsAndFinish}>
+            Aktifkan & Mulai
           </button>
         </div>
       {/if}

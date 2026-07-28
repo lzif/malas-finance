@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addDays, clampDay, daysInMonth, dayKeyOf, dayRange, daysBetween } from './day'
+import { addDays, clampDay, daysInMonth, dayKeyOf, dayRange, daysBetween, weekdayOf } from './day'
 
 describe('daysBetween', () => {
   it('daysBetween(x, x) === 0 — locked in because every cycle formula depends on it', () => {
@@ -59,6 +59,14 @@ describe('daysInMonth / clampDay', () => {
     expect(daysInMonth(2025, 2)).toBe(28)
     expect(clampDay(31, 2025, 2)).toBe(28)
     expect(clampDay(30, 2025, 2)).toBe(28)
+  })
+})
+
+describe('weekdayOf', () => {
+  it('matches JS getDay() convention: 0 = Sunday .. 6 = Saturday', () => {
+    expect(weekdayOf('2026-07-19')).toBe(0) // a Sunday
+    expect(weekdayOf('2026-07-18')).toBe(6) // a Saturday
+    expect(weekdayOf('2026-07-15')).toBe(3) // a Wednesday
   })
 })
 

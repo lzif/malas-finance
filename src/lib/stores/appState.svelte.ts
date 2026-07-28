@@ -2,8 +2,14 @@
 // The only place in the app that knows about both Dexie and pure domain/.
 
 import { untrack } from 'svelte'
-import { db, type Commitment, type Settings, type Transaction, type Wallet } from '../db/schema'
+import { db, DEFAULT_NOTIF, type Commitment, type NotifSettings, type Settings, type Transaction, type Wallet } from '../db/schema'
 import { backupNow, backupStatus, downloadBackup, scheduleBackup, type BackupStatus } from '../db/autoBackup'
+import {
+  notifyDiagnostics as readNotifyDiagnostics,
+  refreshNotificationsOnOpen,
+  touchNotifications,
+  type NotifOpenInput
+} from '../db/notifySchedule'
 import { getSettings, updateSettings as repoUpdateSettings } from '../db/repo/settings'
 import {
   activeWallets,
@@ -22,11 +28,15 @@ import {
   topTags as repoTopTags,
   type NewTransactionInput
 } from '../db/repo/transactions'
-import { dayKeyOf } from '../domain/day'
+import { dayKeyOf, daysBetween, weekdayOf } from '../domain/day'
 import { cycleFor } from '../domain/cycle'
 import { computeAllowance, projectedTomorrowAllowance, type AllowanceResult } from '../domain/allowance'
 import { settlingKind, unpaidCommitments as computeUnpaidCommitments } from '../domain/commitment'
-import { computeRunway, type RunwayResult } from '../domain/runway'
+import { computeRunway, computeTotalDailyCost, type RunwayResult } from '../domain/runway'
+import { impulseAmount, impulseRunwayDays } from '../domain/impulse'
+import { computeWeekComparison } from '../domain/weekComparison'
+import { getNotifier } from '../notify'
+import { todayBannerMessage, type NotifyMessage } from '../notify/messages'
 import type { CycleResult } from '../domain/types'
 
 class AppState {
@@ -189,6 +199,23 @@ class AppState {
     return projected < allowance.allowanceToday ? projected : null
   }
 
+  /**
+   * Same projection as `tomorrowAllowance`, but WITHOUT the "only if lower"
+   * filter — the daily-summary notification and its banner counterpart
+   * (spec §8.1, "Jatah besok Rp 120.000") state tomorrow's allowance
+   * plainly, they do not require it to be a decrease.
+   */
+  private get rawTomorrowAllowance(): number | null {
+    const cycle = this.cycle
+    if (!cycle || cycle.daysRemaining <= 1) return null
+    return projectedTomorrowAllowance({
+      spendableBalance: this.spendableBalance,
+      unpaidCommitments: this.unpaidCommitments,
+      endBuffer: this.settings?.endBuffer ?? 0,
+      daysRemaining: cycle.daysRemaining
+    })
+  }
+
   /** Runway (spec §4.5). */
   get runway(): RunwayResult | null {
     if (!this.settings || !this.settings.startedAt) return null
@@ -200,6 +227,124 @@ class AppState {
       spendableBalance: this.spendableBalance,
       dailyCommitmentCost: this.dailyCommitmentCost
     })
+  }
+
+  /** The four notification toggles + timing (spec §7.4, §8.1). Falls back to all-off. */
+  get notifSettings(): NotifSettings {
+    return this.settings?.notif ?? DEFAULT_NOTIF
+  }
+
+  /**
+   * Home-screen "today" banner (spec §8.4) — the exact sentence a
+   * notification would send, built from the SAME functions in
+   * notify/messages.ts so wording can never drift from what actually gets
+   * scheduled. Priority: an exceeded allowance outranks "no records yet",
+   * which outranks the plain daily summary. The weekly recap has no daily
+   * "today" banner slot — it belongs to the (Phase 2, not yet built) Sadar
+   * dashboard, see TODO.md.
+   */
+  get todayBanner(): NotifyMessage | null {
+    const allowance = this.allowance
+    if (!allowance) return null
+    if (allowance.status === 'lewat') {
+      return todayBannerMessage({
+        kind: 'exceeded',
+        overspend: -allowance.remainingAllowance,
+        tomorrowAllowance: this.tomorrowAllowance
+      })
+    }
+    if (this.transactionsToday.length === 0) {
+      return todayBannerMessage({ kind: 'noRecords' })
+    }
+    return todayBannerMessage({
+      kind: 'summary',
+      spentToday: allowance.spentToday,
+      tomorrowAllowance: this.rawTomorrowAllowance
+    })
+  }
+
+  /** Settings diagnostics (spec §8.5): when notifications were last (re)scheduled. */
+  get notifyDiagnostics(): { lastScheduledAt: number | null } {
+    return readNotifyDiagnostics()
+  }
+
+  /**
+   * Assembles the plain data bag notify/schedule.ts's pure functions need,
+   * from whatever appState already has loaded/computed. Keeps notify/ itself
+   * free of Dexie/Svelte (architecture, spec §6.1) — this is the one place
+   * that bridges the two, mirroring how this class is already "the only
+   * module that knows about both Dexie and domain/".
+   */
+  private buildNotifInput(): NotifOpenInput {
+    const cycle = this.cycle
+    const allowance = this.allowance
+    const isExceeded = allowance?.status === 'lewat'
+    const overspend = isExceeded ? -allowance!.remainingAllowance : 0
+
+    const startedAt = this.settings?.startedAt ?? null
+    const daysSinceStart = startedAt ? daysBetween(this.today, startedAt) : 0
+    const weekComparison = computeWeekComparison(this.dailySpendMap, this.today, daysSinceStart)
+    const comparison = weekComparison && weekComparison.percentChange !== null
+      ? { percentChange: weekComparison.percentChange }
+      : null
+
+    const impulseTxs = this.transactions.map((t) => ({
+      kind: t.kind,
+      intent: t.intent,
+      commitmentId: t.commitmentId,
+      dayKey: t.dayKey,
+      amount: t.amount
+    }))
+    const impulseAmountRp = cycle ? impulseAmount(impulseTxs, cycle.start, this.today) : 0
+    const totalDailyCost = startedAt
+      ? computeTotalDailyCost({
+          today: this.today,
+          startedAt,
+          dailySpendMap: this.dailySpendMap,
+          seedDailySpend: this.settings?.seedDailySpend ?? 0,
+          dailyCommitmentCost: this.dailyCommitmentCost
+        }).totalDailyCost
+      : 0
+
+    return {
+      notif: this.notifSettings,
+      today: this.today,
+      nowMs: Date.now(),
+      hasRecordToday: this.transactionsToday.length > 0,
+      spentToday: allowance?.spentToday ?? 0,
+      tomorrowAllowanceRaw: this.rawTomorrowAllowance,
+      isExceeded,
+      overspend,
+      tomorrowAllowanceIfLower: this.tomorrowAllowance,
+      todayWeekday: weekdayOf(this.today),
+      comparison,
+      impulseAmountRp,
+      impulseDays: impulseRunwayDays(impulseAmountRp, totalDailyCost)
+    }
+  }
+
+  /**
+   * Called once when the app opens, after the first successful load() (spec
+   * §8.5 — reschedule everything so an OS-level cancellation, reboot, or OEM
+   * kill recovers automatically). A no-op before onboarding, since there is
+   * no cycle/allowance to notify about yet.
+   */
+  async initNotifications(): Promise<void> {
+    if (!this.onboarded) return
+    await refreshNotificationsOnOpen(this.buildNotifInput())
+  }
+
+  /** Onboarding screen 4 and Settings both go through this (spec §7.5, §8.5). */
+  async requestNotificationPermission(): Promise<boolean> {
+    return getNotifier().requestPermission()
+  }
+
+  /** Settings toggle (spec §7.4) — persists the patch, then reschedules to match immediately. */
+  async updateNotifSetting(patch: Partial<NotifSettings>): Promise<void> {
+    const current = this.notifSettings
+    await repoUpdateSettings({ notif: { ...current, ...patch } })
+    await this.load()
+    await refreshNotificationsOnOpen(this.buildNotifInput())
   }
 
   /**
@@ -230,6 +375,7 @@ class AppState {
   /** Every mutation schedules a debounced snapshot (spec §9.1). */
   private touch(): void {
     scheduleBackup(__APP_VERSION__, this.today, () => this.invalidateBackupStatus())
+    if (this.onboarded) touchNotifications(this.buildNotifInput())
   }
 
   /**
@@ -396,6 +542,8 @@ class AppState {
     cycleMode: 'monthly-day' | 'manual' | 'rolling'
     cycleAnchorDay: number
     cycleManualEnd: string | null
+    /** Set only when onboarding screen 4's permission request was granted (spec §7.5, §8.5). */
+    notif?: Partial<NotifSettings>
   }): Promise<void> {
     await createWallet({ name: 'CASH', kind: 'spendable', initialBalance: input.initialBalance })
     // Must use the effective dayStartHour, not a hardcoded 0. If the two
@@ -408,9 +556,11 @@ class AppState {
       cycleMode: input.cycleMode,
       cycleAnchorDay: input.cycleAnchorDay,
       cycleManualEnd: input.cycleManualEnd,
-      startedAt
+      startedAt,
+      notif: input.notif ? { ...DEFAULT_NOTIF, ...input.notif } : DEFAULT_NOTIF
     })
     await this.load()
+    await this.initNotifications()
   }
 }
 

@@ -584,6 +584,11 @@ Cycle (mode, anchor date, `endBuffer`), wallets (add/archive/reorder, mark `rese
 
 A setting that silently halves anchor numbers will be perceived as a bug, and trust in those numbers will not recover afterward.
 
+**Phase 3 scope note:** only the notification section — the four toggles plus
+the §8.5 diagnostics (last-scheduled time, exact-alarm status) — is built.
+Cycle, wallets, commitments, `dayStartHour`, `bigDeleteThreshold`, and
+backup/export/import settings have no screen yet; TODO.md tracks this.
+
 **sesuaikan saldo.** All mathematics in this document rests upon an accurate `spendableBalance`, and a single unrecorded transaction causes every number to drift silently. Therefore, each wallet has a "sesuaikan saldo" action: the user inputs their actual balance, and the app creates a **visible correction transaction** for the difference (`in` or `out`, tag `#koreksi`). `intent = 'routine'` for the `out` direction; the `in` direction carries `intent = null`, since §5.1 requires an intent if and only if `kind === 'out'`.
 
 The app never overwrites balances silently. Rewriting numbers without a trace ruins the entire history that forms the basis for runway and daily averages — and hides untracked money from the user, which is precisely the information they most need to be aware of.
@@ -600,6 +605,11 @@ Three questions, one screen per question, all editable later in Settings:
    - "Tidak tentu" → `rolling`
 
 Then a fourth screen requesting notification permissions and offering a direct link to battery optimization settings (§8.5).
+
+**Pinned: granting permission on screen 4 turns all four notification
+toggles on** (`DEFAULT_NOTIF` otherwise ships all-off) — the permission ask
+would be pointless if nothing then got scheduled. Declining/skipping leaves
+all four off; the user can still turn them on individually later in Setelan.
 
 This onboarding is what enables anchor numbers and runway to function from **day one** even with an empty database (D9).
 
@@ -618,6 +628,15 @@ This onboarding is what enables anchor numbers and runway to function from **day
 
 All four can be turned off individually.
 
+**Pinned (Phase 3 implementation): allowance-exceeded fires at most once per
+dayKey.** The catalog above states no de-dup rule. Chosen behavior: the push
+fires on the write that first crosses into `'lewat'` status each day, and not
+again on subsequent transactions that day, even if the 5-second undo snackbar
+removes the triggering transaction and a later one re-exceeds the same day.
+The in-app "today" banner (§8.4) is unaffected — it recomputes live from the
+current allowance on every render — so K3's safety net still holds even on a
+day where the push itself stays silent after an undo.
+
 ### 8.2 Technical constraints dictating design
 
 Capacitor local notifications are **scheduled with fixed text**. No JavaScript runs when a notification triggers. This means "spent Rp X today" cannot be calculated at trigger time.
@@ -626,7 +645,19 @@ Capacitor local notifications are **scheduled with fixed text**. No JavaScript r
 
 The **"belum ada catatan"** notification is handled cleanly in reverse: scheduled when the day starts, then **cancelled** as soon as the first transaction of that day occurs.
 
-Weekly notifications are computed and scheduled every time the app is opened on Saturday or Sunday.
+Weekly notifications are computed and scheduled every time the app is opened on the recap day or the day before it (Saturday or Sunday for the schema default `weeklyRecapDay = 0`/Sunday — `NotifSettings.weeklyRecapDay` follows `Date#getDay()` convention and is a real, if not yet Settings-exposed, field). It is skipped entirely — not scheduled with a fabricated number — when `domain/weekComparison.ts`'s thin-data guard (§4.7) has no percentage to report; a missing notification is preferable to a wrong one.
+
+**Pinned: what "reschedule for the next 7 days" (§8.5) actually means.** Only
+the "no records yet" reminder is pre-scheduled several days ahead — its text
+never depends on figures, so pre-scheduling it is honest. The daily summary
+and weekly recap cannot be pre-computed for days that have not happened yet;
+they are instead rescheduled fresh (with that day's real figures) every time
+the app is opened or a write occurs, per the rules above. On every app open —
+and again on every calendar-day rollover while the app stays foregrounded or
+backgrounded-but-not-killed — all pending notifications are cancelled and
+everything currently enabled is rescheduled from scratch, which is also what
+keeps the "no records" reminder's fixed notification ids correctly mapped to
+the right dates after a day change.
 
 ### 8.3 `Notifier` Interface
 
@@ -653,6 +684,16 @@ The mandatory consequence of K3 to enforce: **every notification has an in-app c
 - The Settings screen displays diagnostics: when the last notification was scheduled, and whether battery exemption is active.
 
 Xiaomi, Oppo, Vivo, and Samsung can still kill them. §8.4 is a safety net, not an optional extra.
+
+**Pinned (Phase 3 implementation): "battery optimization" is approximated by
+the exact-alarm settings screen.** `@capacitor/local-notifications` (the
+plugin actually installed) exposes no `ACTION_IGNORE_BATTERY_OPTIMIZATIONS`
+equivalent — only `checkExactNotificationSetting()` /
+`changeExactNotificationSetting()`, Android 12+'s separate "exact alarm"
+permission screen, which guards the same class of problem (Doze silently
+dropping scheduled alerts). Onboarding's battery link and the Settings
+diagnostic both use this API. A true battery-optimization-whitelist intent
+would need a custom native plugin; out of scope for this phase (TODO.md).
 
 ---
 

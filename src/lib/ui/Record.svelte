@@ -232,6 +232,10 @@
     {/if}
   </div>
 
+  {#if appState.todayBanner}
+    <p class="today-banner">{appState.todayBanner.body}</p>
+  {/if}
+
   <div class="mode-row">
     <button class="mode-btn" class:active={mode === 'out'} onclick={() => (mode = 'out')}>
       KELUAR

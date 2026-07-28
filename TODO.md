@@ -5,11 +5,14 @@
 Kept deliberately as one file: the phase plan already lives in spec §12, and a
 second document restating it would only drift out of sync with the first.
 
-Last updated: 2026-07-28
+Last updated: 2026-07-29
 
 ## Pick up here
 
-Nothing blocking is left in Phase 1. Next up: Phase 2 (the Sadar dashboard).
+Phase 3 (Voice/notifications) is built — see its section below for exactly
+what shipped, what was deliberately narrowed, and what still needs a real
+device. Nothing blocking is left in Phase 1 or Phase 3. Next up: Phase 2 (the
+Sadar dashboard).
 
 Balance adjustment (was #1 here) is done — each wallet row on the Komitmen
 screen has a "sesuaikan saldo" action; entering the actual balance previews
@@ -45,7 +48,12 @@ Two pieces of it stay open, not blocking anything above: rotation past 7
 daily files is untested (needs a real week to elapse), and uninstall-survival
 is untested (needs the Phase 4 import UI, which also doesn't exist yet).
 
-Then Phase 2 (the Sadar dashboard). Nothing in Phase 2 is started.
+Phase 3 (Voice/notifications) is done for everything verifiable without a
+physical device — see its section below. Then Phase 2 (the Sadar dashboard).
+Nothing in Phase 2 is started, apart from the two narrow formulas
+(`domain/weekComparison.ts`, `domain/impulse.ts`) pulled forward early
+because the weekly notification needed them; the rest of §4.6/§4.7 and the
+whole dashboard UI remain unbuilt.
 
 **Before adding features, use the app on a phone for a few days.** Every check so
 far is automated — tests, types, build, HTTP status. None of them prove the
@@ -77,8 +85,63 @@ comparison, intent audit, History filters.
 
 ## Phase 3 — Voice (notifications)
 
-Not started. Needs Capacitor, so it also loses the instant browser dev loop
-(§11.1). `NotifSettings` already exists in the schema and is unused.
+Done for everything verifiable without a physical Android device. Built:
+`@capacitor/local-notifications` added; `src/lib/notify/` (Notifier
+interface, capacitor.ts, mock.ts, index.ts platform switch — mirrors
+`db/fsBackup/`'s shape exactly, per AGENTS.md); scheduling/rescheduling logic
+in `notify/schedule.ts` (pure, tested against `mock.ts`) with its
+localStorage-backed glue in `db/notifySchedule.ts` (debounce timer, 5s,
+separate from `autoBackup.ts`'s 30s one); all four notification types from
+spec §8.1; the in-app "today" banner on Record.svelte (spec §8.4, shares the
+exact same message builders as the real notifications — `notify/messages.ts`
+— so wording cannot drift); Onboarding's 4th screen (permission + exact-alarm
+link); Settings screen (`Settings.svelte`, new, wired into `App.svelte`'s
+nav as "Setelan") scoped to the four toggles + diagnostics; `AndroidManifest.xml`
+declares `SCHEDULE_EXACT_ALARM`/`USE_EXACT_ALARM`.
+
+Verified: `npm test` (all pass, including `weekComparison`/`impulse`/
+`messages`/`schedule`/`diagnostics` suites), `svelte-check` (0 errors),
+`npm run build` and `npm run build:android` (both succeed). Manually verified
+live in the browser (fresh onboarding → 4th screen → Setelan toggles →
+today-banner) — see the PR for the exact recap.
+
+**Explicitly NOT verified — needs a real Android device/emulator, neither of
+which exists in this environment:** actual notification delivery, Doze
+survival, exact-alarm permission behavior, and the battery/exact-alarm
+settings deep link. Spec §12's Phase 3 done-criterion ("four notifications
+delivered on real device") is NOT met by this session and must not be
+reported as met until someone verifies it on a device.
+
+Deliberately narrowed, not oversights:
+- Only `impulseAmount` (the rupiah sum) and `computeWeekComparison` (§4.7's
+  one formula) were pulled forward from Phase 2 — just enough for the weekly
+  notification's content. The dashboard itself, the full impulse-ratio
+  percentage + its emergency-parallel treatment + 20%-reflection prompt, tag
+  breakdown, sparkline, and History filters are all still Phase 2, not started.
+- The weekly recap has no in-app "today banner" counterpart — §8.4 literally
+  scopes the banner to "today"; the weekly recap's natural in-app home is the
+  (unbuilt) Sadar dashboard.
+- Allowance-exceeded fires at most once per dayKey (pinned in spec §8.1) —
+  an undo-then-re-exceed within the same day does not re-push, though the
+  live in-app banner is unaffected and still shows the current true state.
+- "Battery optimization" (§8.5) is approximated with the installed plugin's
+  exact-alarm settings screen (`checkExactNotificationSetting` /
+  `changeExactNotificationSetting`) — there is no
+  `ACTION_IGNORE_BATTERY_OPTIMIZATIONS` equivalent in
+  `@capacitor/local-notifications`. A true battery-optimization intent needs
+  a custom native plugin; not attempted.
+- Settings this phase covers notifications only (see spec §7.4's scope note)
+  — cycle, wallets, commitments, `dayStartHour`, `bigDeleteThreshold`, and
+  backup/export/import have no Settings UI yet.
+
+**Housekeeping the owner needs to do, not just future-session me:** an agy-bridge
+mechanical-delegation task in this session wrote its first draft of
+`src/lib/notify/{Notifier,mock,capacitor,index}.ts` into the **main checkout**
+(`/home/ubuntu/repos/malas-finance/src/lib/notify/`) instead of this worktree
+— the sandbox's worktree-isolation guard then correctly refused to let this
+session delete them. Those 4 files are stray, untracked, and safe to delete;
+the real (reviewed, tested) versions live in this branch. Please `rm -rf
+/home/ubuntu/repos/malas-finance/src/lib/notify/` in the main checkout.
 
 ## Phase 4 — Release
 
@@ -122,6 +185,12 @@ at single-user scale. None are forgotten; none are safe to forget.
   rule spec §7.4 does not state, and the alternative — leaving the average
   built on a balance that was already known to be wrong — is worse. Only
   matters for large corrections; not worth machinery at single-user scale.
+- **The allowance-exceeded push notification does not re-fire after an
+  undo-then-re-exceed within the same day** (pinned in spec §8.1) — its
+  at-most-once-per-dayKey de-dup is keyed only on the day, not on which
+  transaction tripped it. The in-app "today" banner is unaffected (it always
+  reflects the live allowance), so K3's safety net still holds; only the
+  push itself can go quiet for the rest of that day after an undo.
 
 ## Sharpest risk
 

@@ -72,3 +72,14 @@ export function dayRange(start: string, end: string): string[] {
   for (let i = 0; i <= n; i++) out.push(addDays(start, i))
   return out
 }
+
+/**
+ * Day of week for a dayKey, JS `Date#getDay()` convention: 0 = Sunday .. 6 =
+ * Saturday. Computed from the UTC calendar date the key already names (see
+ * `utcMidnightOf`), so it does not depend on the caller's local timezone —
+ * only on which calendar date the string spells out (spec §8.2, weekly
+ * recap "opened on Saturday or Sunday").
+ */
+export function weekdayOf(dayKey: string): number {
+  return new Date(utcMidnightOf(dayKey)).getUTCDay()
+}

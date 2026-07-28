@@ -3,7 +3,7 @@
 
 import { addDays, daysBetween } from './day'
 
-export interface RunwayInput {
+export interface TotalDailyCostInput {
   today: string
   /** dayKey of the first day the app was used (settings.startedAt). */
   startedAt: string
@@ -14,12 +14,15 @@ export interface RunwayInput {
   dailySpendMap: Record<string, number>
   /** Set during onboarding: "roughly how much do you spend a day?". */
   seedDailySpend: number
-  spendableBalance: number
   /**
    * Σ(active commitments) / cycleLength. MUST remain a parameter even though
    * commitments are out of MVP scope — the caller passes 0.
    */
   dailyCommitmentCost: number
+}
+
+export interface RunwayInput extends TotalDailyCostInput {
+  spendableBalance: number
 }
 
 export interface RunwayResult {
@@ -28,8 +31,14 @@ export interface RunwayResult {
   estimated: boolean
 }
 
+export interface TotalDailyCostResult {
+  totalDailyCost: number
+  /** true while the seed weight (w) < 1. */
+  estimated: boolean
+}
+
 /**
- * computeRunway(input) → { days, estimated } | null
+ * computeTotalDailyCost(input) → { totalDailyCost, estimated }
  *
  * N                 = min(28, daysSinceStart)
  * averageWindow     = [today − N, today − 1]        // does NOT include today
@@ -37,12 +46,15 @@ export interface RunwayResult {
  * w                 = min(1, daysSinceStart / 14)
  * dailyAverage      = w × actualAverage + (1 − w) × seedDailySpend
  * totalDailyCost    = dailyAverage + dailyCommitmentCost
- * runway            = totalDailyCost > 0 ? floor(spendableBalance / totalDailyCost) : null
  *
  * The `N > 0` guard is absolute: without it mean([]) === NaN, and 0 × NaN is
  * still NaN in JavaScript — a zero weight does NOT save the first day (spec §4.5).
+ *
+ * Extracted out of computeRunway so notify/'s weekly-recap impulse-to-days
+ * conversion (spec §4.6) can reuse the exact same daily-cost figure instead
+ * of re-deriving it — two copies of this formula would risk drifting apart.
  */
-export function computeRunway(input: RunwayInput): RunwayResult | null {
+export function computeTotalDailyCost(input: TotalDailyCostInput): TotalDailyCostResult {
   const daysSinceStart = daysBetween(input.today, input.startedAt)
   const N = Math.min(28, daysSinceStart)
 
@@ -58,12 +70,17 @@ export function computeRunway(input: RunwayInput): RunwayResult | null {
 
   const w = Math.min(1, daysSinceStart / 14)
   const dailyAverage = w * actualAverage + (1 - w) * input.seedDailySpend
-  const totalDailyCost = dailyAverage + input.dailyCommitmentCost
 
+  return { totalDailyCost: dailyAverage + input.dailyCommitmentCost, estimated: w < 1 }
+}
+
+/**
+ * computeRunway(input) → { days, estimated } | null
+ *
+ * runway = totalDailyCost > 0 ? floor(spendableBalance / totalDailyCost) : null
+ */
+export function computeRunway(input: RunwayInput): RunwayResult | null {
+  const { totalDailyCost, estimated } = computeTotalDailyCost(input)
   if (totalDailyCost <= 0) return null
-
-  return {
-    days: Math.floor(input.spendableBalance / totalDailyCost),
-    estimated: w < 1
-  }
+  return { days: Math.floor(input.spendableBalance / totalDailyCost), estimated }
 }
