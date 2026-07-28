@@ -7,6 +7,28 @@ second document restating it would only drift out of sync with the first.
 
 Last updated: 2026-07-28
 
+## Pick up here
+
+In order. The first is the only one that risks losing data.
+
+1. **Backup to the filesystem.** Snapshots currently go to localStorage, which is
+   redundancy but not durability. Needs Capacitor, and Capacitor is also what
+   Phase 3 needs, so doing it now unblocks both.
+2. **Trash restore UI.** Soft delete works and the 5-second snackbar can undo,
+   but once that window closes a deleted entry is unreachable.
+3. **Balance adjustment** (spec §7.4). Every formula stands on `spendableBalance`
+   being right; one forgotten transaction skews everything silently and there is
+   currently no way to correct it.
+4. **`manual` cycle mode in onboarding.** Reachable from settings only.
+
+Then Phase 2 (the Sadar dashboard). Nothing in Phase 2 is started.
+
+**Before adding features, use the app on a phone for a few days.** Every check so
+far is automated — tests, types, build, HTTP status. None of them prove the
+numbers look sane to a human or that the keypad is comfortable under a thumb. A
+broken keypad layout once passed the entire suite and was only caught by reading
+the CSS.
+
 ---
 
 ## Phase 1 — Foundation (spec §12)
