@@ -13,10 +13,10 @@
   --band-mendesak: #f08a3c;
   --band-terlampaui: #ff5c5c;
 
-  --glass-bg: rgba(255,255,255,0.06);
-  --glass-border: rgba(255,255,255,0.14);
-  --glass-blur: 14px;
-  --glass-shadow: 0 8px 32px rgba(0,0,0,0.35);
+  --glass-bg: rgba(255,255,255,0.12);
+  --glass-border: rgba(255,255,255,0.22);
+  --glass-blur: 20px;
+  --glass-shadow: 0 8px 32px rgba(0,0,0,0.4);
   --motion-fast: 150ms;
   --motion-med: 250ms;
   --motion-slow: 400ms;
@@ -34,9 +34,9 @@
     --border: #dcdce4;
     --text: #17171f;
     --text-dim: #6b6b7a;
-    --glass-bg: rgba(255,255,255,0.55);
-    --glass-border: rgba(20,20,30,0.10);
-    --glass-shadow: 0 8px 28px rgba(20,20,40,0.12);
+    --glass-bg: rgba(255,255,255,0.45);
+    --glass-border: rgba(20,20,30,0.16);
+    --glass-shadow: 0 8px 28px rgba(20,20,40,0.18);
     color-scheme: light;
   }
 }
@@ -49,8 +49,8 @@ html, body {
   margin: 0;
   padding: 0;
   background:
-    radial-gradient(circle at 10% 10%, color-mix(in srgb, var(--accent) 8%, transparent) 0%, transparent 60%),
-    radial-gradient(circle at 90% 90%, color-mix(in srgb, var(--band-waspada) 8%, transparent) 0%, transparent 60%),
+    radial-gradient(circle at 10% 10%, color-mix(in srgb, var(--accent) 14%, transparent) 0%, transparent 60%),
+    radial-gradient(circle at 90% 90%, color-mix(in srgb, var(--band-waspada) 14%, transparent) 0%, transparent 60%),
     var(--bg);
   background-attachment: fixed;
   color: var(--text);
@@ -65,8 +65,8 @@ html, body {
 @media (prefers-color-scheme: light) {
   html, body {
     background:
-      radial-gradient(circle at 10% 10%, color-mix(in srgb, var(--accent) 6%, transparent) 0%, transparent 60%),
-      radial-gradient(circle at 90% 90%, color-mix(in srgb, var(--band-waspada) 6%, transparent) 0%, transparent 60%),
+      radial-gradient(circle at 10% 10%, color-mix(in srgb, var(--accent) 10%, transparent) 0%, transparent 60%),
+      radial-gradient(circle at 90% 90%, color-mix(in srgb, var(--band-waspada) 10%, transparent) 0%, transparent 60%),
       var(--bg);
     background-attachment: fixed;
   }
@@ -78,7 +78,15 @@ html, body {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  background: var(--bg);
+  /* No background here (was a flat var(--bg)): on any real phone width
+     (≤480px, the app's actual target — spec says "developed from a phone"),
+     #app fills the FULL viewport and would completely occlude body's ambient
+     gradient underneath it, leaving nothing for the glass surfaces to blur
+     and making the whole liquid-glass effect invisible on mobile specifically.
+     Desktop-width testing missed this because the gradient still showed in
+     the margins outside #app there. Transparent lets body's gradient show
+     through on every viewport width. */
+  background: transparent;
 }
 
 button {
@@ -99,17 +107,23 @@ button {
 
 .screen-track {
   flex: 1;
-  display: flex;
-  flex-direction: column;
   position: relative;
   overflow-x: hidden;
   touch-action: pan-y;
 }
 
+/* Absolutely positioned, not flex:1: during the ~250ms in:/out:fly overlap,
+   the outgoing and incoming screens both exist as children of .screen-track
+   at once. Two flex:1 children in a flex column would split the available
+   height 50/50 for that window — a visible squish-then-snap on every tab
+   switch and swipe. Absolute + inset:0 gives each one the full size
+   independently instead. */
 .screen-slide {
-  flex: 1;
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
 }
 
 /* ---- Anchor number ---- */
