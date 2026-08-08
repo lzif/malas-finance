@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'claude/**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Format
+        run: deno fmt --check src/ deno.json
+      - name: Lint
+        run: deno lint src/
+      - name: Type-check
+        run: deno task check
+      - name: Test
+        run: deno test src/

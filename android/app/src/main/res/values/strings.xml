@@ -1,7 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<resources>
-    <string name="app_name">MalasFinance</string>
-    <string name="title_activity_main">MalasFinance</string>
-    <string name="package_name">com.malasfinance.app</string>
-    <string name="custom_url_scheme">com.malasfinance.app</string>
-</resources>
