@@ -8,29 +8,14 @@
 //                               echoes it in X-Telegram-Bot-Api-Secret-Token
 //   DATABASE_URL              — PostgreSQL connection string
 //   GOOGLE_AI_API_KEY         — Gemini/Gemma via Google AI Studio
-//   TZ                        — MUST be Asia/Jakarta. See the check below.
+//
+// No TZ setting is required: the calendar day is computed against an
+// explicitly named zone (domain/day.ts, APP_TIME_ZONE), not the process's.
 
 import { handleMessage } from './bot/webhook.ts'
 
 const BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN') ?? ''
 const WEBHOOK_SECRET = Deno.env.get('TELEGRAM_WEBHOOK_SECRET') ?? ''
-
-/** WIB is UTC+7; getTimezoneOffset reports minutes *behind* UTC, hence -420. */
-const WIB_OFFSET_MINUTES = -420
-
-// dayKeyOf() reads the process's local calendar day, and Deno Deploy isolates
-// run as UTC unless TZ says otherwise. Left unset, every transaction logged
-// between 00:00 and 07:00 WIB is filed against *yesterday*: it lands on a day
-// whose allowance is already spent while the new day still reads full, and the
-// cycle rolls over a day late. That is the anchor number lying — the one
-// failure this app cannot absorb (spec §2, §17 criterion 7) — so say so loudly
-// at boot rather than letting it hide in a plausible-looking number.
-if (new Date().getTimezoneOffset() !== WIB_OFFSET_MINUTES) {
-  console.error(
-    `TZ is not Asia/Jakarta (offset ${-new Date().getTimezoneOffset()}min vs expected 420min). ` +
-      'dayKey will be computed for the wrong calendar day. Set TZ=Asia/Jakarta.',
-  )
-}
 
 /** Minimal shape of the Telegram update fields this skeleton reads. */
 interface TelegramUpdate {

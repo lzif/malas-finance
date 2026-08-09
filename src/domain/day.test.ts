@@ -19,20 +19,49 @@ describe('daysBetween', () => {
   })
 })
 
+/**
+ * A WIB (UTC+7) wall-clock time as epoch ms. These tests used to build their
+ * instants with `new Date(y, m, d, ...)`, which resolves against whatever
+ * timezone the test process runs in — so they asserted nothing about the zone
+ * and passed under UTC while production was silently off by a day. Every
+ * instant here is pinned to an absolute moment instead.
+ */
+function wib(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute = 0,
+): number {
+  return Date.UTC(year, month - 1, day, hour - 7, minute)
+}
+
 describe('dayKeyOf', () => {
   it("dayStartHour = 3: a transaction at 01:30 falls into yesterday's dayKey", () => {
-    const at = new Date(2025, 5, 15, 1, 30, 0).getTime() // June 15, 2025, 01:30 local
-    expect(dayKeyOf(at, 3)).toBe('2025-06-14')
+    expect(dayKeyOf(wib(2025, 6, 15, 1, 30), 3)).toBe('2025-06-14')
   })
 
   it("dayStartHour = 3: a transaction at 03:30 falls into today's dayKey", () => {
-    const at = new Date(2025, 5, 15, 3, 30, 0).getTime()
-    expect(dayKeyOf(at, 3)).toBe('2025-06-15')
+    expect(dayKeyOf(wib(2025, 6, 15, 3, 30), 3)).toBe('2025-06-15')
   })
 
   it('dayStartHour = 0 (default): midnight immediately starts a new day', () => {
-    const at = new Date(2025, 5, 15, 0, 5, 0).getTime()
-    expect(dayKeyOf(at, 0)).toBe('2025-06-15')
+    expect(dayKeyOf(wib(2025, 6, 15, 0, 5), 0)).toBe('2025-06-15')
+  })
+
+  it("uses the user's zone, not the process's — 17:45 UTC is already tomorrow in WIB", () => {
+    // The regression that shipped: under a UTC process this returned
+    // '2026-08-09', filing the expense against a day whose allowance was
+    // already spent. Asserted as a raw UTC instant so the test fails if
+    // dayKeyOf ever goes back to reading process-local time.
+    expect(dayKeyOf(Date.UTC(2026, 7, 9, 17, 45), 0)).toBe('2026-08-10')
+  })
+
+  it('is independent of the process timezone', () => {
+    // Same instant, same answer, whatever TZ the suite runs under.
+    const at = Date.UTC(2026, 7, 9, 17, 45)
+    expect(dayKeyOf(at, 0, 'Asia/Jakarta')).toBe('2026-08-10')
+    expect(dayKeyOf(at, 0, 'UTC')).toBe('2026-08-09')
   })
 })
 

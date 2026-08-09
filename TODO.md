@@ -35,23 +35,36 @@ Concrete next steps, roughly in order:
 4. **Fallback + retry** (spec §15 #8): Gemma fallback when Gemini errors/rate-limits.
    Right now a Gemini outage returns "Parser lagi ngadat" and the message is lost.
 
-### Must be set before production: `TZ=Asia/Jakarta`
+### The day boundary now names its own timezone — fixed, no env var
 
-`dayKeyOf` reads the *process's* local calendar day, and Deno Deploy isolates
-run as UTC unless `TZ` says otherwise. Unset, every transaction logged between
-00:00 and 07:00 WIB is filed against **yesterday** — it lands on a day whose
-allowance is already spent while the new day still reads full, and the cycle
-rolls over a day late. `dayStartHour` cannot compensate: it only shifts
-backwards (0..6).
+`dayKeyOf` used to read the *process's* local calendar day via
+`getFullYear/getMonth/getDate`, and Deno Deploy isolates run as UTC. Every
+transaction logged between 00:00 and 07:00 WIB was filed against **yesterday**
+— landing on a day whose allowance was already spent while the new day still
+read full, with the cycle rolling over a day late. `dayStartHour` could not
+compensate: it only shifts backwards (0..6).
 
-Confirmed, not theoretical: the same message logged at 00:48 WIB produced
-`day_key = 2026-08-09` under UTC and `2026-08-10` under `TZ=Asia/Jakarta`.
-`main.ts` now logs a loud error at boot when the offset isn't +7, but the real
-fix is a `timezone` column in `settings` so the day boundary stops depending on
-an environment variable nobody can see from inside the app. Note that the
-"timezone" entry under carried-over limits below is a *different* bug (a device
-changing zones); its reasoning — "the clock is server-side, one timezone" — is
-what hid this one, because that one timezone is UTC, not Jakarta.
+`domain/day.ts` now formats against an explicitly named zone
+(`APP_TIME_ZONE = 'Asia/Jakarta'`) using `Intl.DateTimeFormat`. Nothing has to
+be configured at deploy time, and `deno test` no longer depends on the zone the
+suite runs in. Verified: with `TZ` unset and the process on `Aug 09 18:20 UTC`,
+`kopi 18k` stored `day_key = 2026-08-10` — the WIB date. Two regression tests
+pin it, one asserting a raw UTC instant so the test fails if this ever goes
+back to process-local time.
+
+The `timeZone` parameter is threaded through rather than reading the constant
+directly, so promoting it to a `timezone` column on `settings` is a small
+change if it ever needs to vary.
+
+Related, still open: `createTransaction`'s future-dated guard builds "end of
+today" with `setHours(23,59,59,999)`, which is still process-local. Harmless
+while `at` always defaults to now, but it will be off by the UTC/WIB offset the
+moment a caller passes an explicit `at` (editing a past transaction, Phase 3).
+
+Note that the "timezone" entry under carried-over limits below is a *different*
+bug (a device changing zones); its reasoning — "the clock is server-side, one
+timezone" — is what hid this one, because that one timezone was UTC, not
+Jakarta.
 
 ### Needs a spec decision: reserve wallets in the allowance
 

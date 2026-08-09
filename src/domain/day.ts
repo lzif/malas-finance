@@ -32,13 +32,39 @@ export function parseDayKey(dayKey: string): { year: number; month: number; day:
 }
 
 /**
- * dayKeyOf(at, dayStartHour) — the local calendar day containing epoch ms
- * `at`, shifted by `dayStartHour` (0..6) so that a midnight snack counts as
- * "yesterday" when dayStartHour > 0. (spec §4.1)
+ * The zone the user's calendar day is measured in. Hard-coded rather than read
+ * from the `TZ` environment variable: the process timezone is invisible from
+ * inside the app, and getting it wrong does not raise an error — it silently
+ * files transactions against the wrong day. This is a single-user app for one
+ * person in Jakarta (spec §8 schedules everything in WIB), so naming the zone
+ * in code is both simpler and safer than depending on deployment config.
+ *
+ * If this ever needs to vary, promote it to a `timezone` column on `settings`
+ * and pass it through the `timeZone` parameter below — which is why that
+ * parameter exists rather than the constant being read directly.
  */
-export function dayKeyOf(at: number, dayStartHour: number): string {
+export const APP_TIME_ZONE = 'Asia/Jakarta'
+
+/**
+ * dayKeyOf(at, dayStartHour) — the calendar day containing epoch ms `at` *in
+ * the user's timezone*, shifted by `dayStartHour` (0..6) so that a midnight
+ * snack counts as "yesterday" when dayStartHour > 0. (spec §4.1)
+ *
+ * The zone is named explicitly instead of using Date's local-time accessors
+ * (getFullYear/getMonth/getDate), which resolve against whatever timezone the
+ * process happens to run in — UTC on Deno Deploy. Under that, everything
+ * logged between 00:00 and 07:00 WIB was stamped with the previous day.
+ */
+export function dayKeyOf(at: number, dayStartHour: number, timeZone = APP_TIME_ZONE): string {
   const shifted = new Date(at - dayStartHour * 3_600_000)
-  return formatDayKey(shifted.getFullYear(), shifted.getMonth() + 1, shifted.getDate())
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(shifted)
+  const part = (type: string): number => Number(parts.find((p) => p.type === type)?.value)
+  return formatDayKey(part('year'), part('month'), part('day'))
 }
 
 /** UTC midnight epoch ms of a dayKey. Used only for day differences. */
