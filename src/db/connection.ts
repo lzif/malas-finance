@@ -9,15 +9,22 @@
 //      process to own a connection pool — a stateless per-query HTTP round trip
 //      fits that model exactly.
 //
-// `sql` is a tagged-template function: interpolations become bound parameters,
-// never string-concatenated, so this is injection-safe by construction.
-//   const rows = await sql`SELECT * FROM wallets WHERE id = ${id}`
+// Lazy: the connection is created on first use, not at import time. This lets
+// repo modules be imported in permissionless `deno test` (where Deno.env.get
+// throws NotCapable) — integration tests that actually call the DB skip when
+// DATABASE_URL is absent, and the import itself never explodes.
 
 import { neon } from '@neondatabase/serverless'
 
-const url = Deno.env.get('DATABASE_URL')
-if (!url) {
-  throw new Error('DATABASE_URL is not set — cannot connect to PostgreSQL')
-}
+type NeonSql = ReturnType<typeof neon>
 
-export const sql = neon(url)
+let _sql: NeonSql | undefined
+
+export function getSql(): NeonSql {
+  if (!_sql) {
+    const url = Deno.env.get('DATABASE_URL')
+    if (!url) throw new Error('DATABASE_URL is not set — cannot connect to PostgreSQL')
+    _sql = neon(url)
+  }
+  return _sql
+}

@@ -13,13 +13,9 @@ replace the walking skeleton in `src/main.ts`.
 
 Concrete next steps, roughly in order:
 
-1. **`src/db/repo/*.ts`** — the repository layer, the *only* write path, enforcing
-   every integrity rule in spec §5.2 (not just the DB CHECKs). Start with
-   `settings.ts`, `wallets.ts`, `transactions.ts`; `categories.ts` needs the
-   match-first / no-overlap logic from §5.3; `commitments.ts` is Phase 2. Use the
-   `sql` tagged template from `db/connection.ts`. Add integration tests under
-   `src/db/` gated on `DATABASE_URL` (skip when unset, like the live parser test)
-   so CI without creds stays green. `db/migrate.ts` already applies the schema.
+1. ~~**`src/db/repo/*.ts`**~~ — **done.** Settings, wallets, transactions,
+   categories — all verified against real Neon (19 integration tests). Lazy
+   `getSql()` in `connection.ts` so permissionless `deno test` stays green.
 2. **Wire the real flow in `main.ts` / `bot/webhook.ts`**: `parseMessage`
    (done) → route by `kind` → repo write → `computeAllowance` (ported) →
    `bot/formatter.ts` (started) → reply. Handle the `clarify` branch (spec §6.7).
@@ -52,7 +48,7 @@ a month".
 | `db/migrate.ts` + `db/sql.ts` (idempotent migration runner) | done — `deno task db:migrate`; `splitStatements` unit-tested (a live run caught a comment-semicolon split bug, now pinned) |
 | `bot/parser.ts` (AI parser, Gemini) | done — **verified against live Gemini**: rokok→impulse, makan siang→routine, +gajian→income. Hard rules (§7.2) enforced in code, not left to the model |
 | `main.ts` webhook entry | walking skeleton — verifies secret, parses amount, echoes; not yet wired to parser/DB/allowance |
-| `db/repo/*` with integrity rules (§5.2) | not started |
+| `db/repo/*` with integrity rules (§5.2) | done — settings, wallets, transactions, categories; **verified against real Neon** (19 integration tests); lazy `getSql()` so permissionless `deno test` stays green |
 | Real expense/income/transfer flow (parser → repo → allowance → reply) | not started |
 | Onboarding (§13) | not started |
 
