@@ -35,14 +35,48 @@ Concrete next steps, roughly in order:
 4. **Fallback + retry** (spec §15 #8): Gemma fallback when Gemini errors/rate-limits.
    Right now a Gemini outage returns "Parser lagi ngadat" and the message is lost.
 
-Known rough edges from the live run (not blocking, worth a pass):
+### Must be set before production: `TZ=Asia/Jakarta`
+
+`dayKeyOf` reads the *process's* local calendar day, and Deno Deploy isolates
+run as UTC unless `TZ` says otherwise. Unset, every transaction logged between
+00:00 and 07:00 WIB is filed against **yesterday** — it lands on a day whose
+allowance is already spent while the new day still reads full, and the cycle
+rolls over a day late. `dayStartHour` cannot compensate: it only shifts
+backwards (0..6).
+
+Confirmed, not theoretical: the same message logged at 00:48 WIB produced
+`day_key = 2026-08-09` under UTC and `2026-08-10` under `TZ=Asia/Jakarta`.
+`main.ts` now logs a loud error at boot when the offset isn't +7, but the real
+fix is a `timezone` column in `settings` so the day boundary stops depending on
+an environment variable nobody can see from inside the app. Note that the
+"timezone" entry under carried-over limits below is a *different* bug (a device
+changing zones); its reasoning — "the clock is server-side, one timezone" — is
+what hid this one, because that one timezone is UTC, not Jakarta.
+
+### Needs a spec decision: reserve wallets in the allowance
+
+spec §4.4's `spentToday` has no wallet filter, but §12 excludes reserve wallets
+from `spendableBalance`. Taken literally together, an expense charged to a
+reserve wallet adds money back into `allowanceBasis` that `spendableBalance`
+never saw leave: `beli laptop 2jt dari tabungan` inflated the allowance and
+then silently snapped it back the next day. `bot/webhook.ts` now filters
+reserve-wallet transactions out of `transactionsToday` at the boundary, which
+keeps the anchor honest, but `domain/` and the spec still disagree on paper.
+Decide which section is authoritative and make them match.
+
+Known rough edges (not blocking, worth a pass):
 
 - The model returns `item` in the user's original casing (`rokok surya`), while
   spec §6.1 shows it title-cased (`Rokok Surya`). A prompt fix, not a code fix.
-- Transfers assume `parsed.wallet` is the *destination* and take the default
-  spendable wallet as the source, because `ParsedInput` has only one wallet
-  field. A two-wallet message ("pindah 500k dari CASH ke Bank") cannot express
-  its source. Needs a `fromWallet` in the parser schema to do properly.
+- Transfers can only name one end. `ParsedInput` has a single `wallet` field, so
+  "pindah 500k dari tabungan ke cash" cannot express its source; the code treats
+  the named wallet as the destination and takes the default spendable wallet as
+  the source. It now refuses to guess when the name doesn't match a wallet
+  (rather than fabricating both operands), but a reserve → spendable withdrawal
+  is still unrepresentable. Needs a `fromWallet` in the parser schema.
+- `ensureWallets` is check-then-act with no `UNIQUE` on `wallets.name`, so two
+  messages arriving together on a fresh install could each insert a `CASH`
+  wallet. Tiny window, single user; a unique index would close it.
 
 Setup for the next session: `deno task db:migrate` applies `schema.sql` + `seed.sql`
 to `DATABASE_URL` (idempotent, verified). Live tests need `--allow-net --allow-env`

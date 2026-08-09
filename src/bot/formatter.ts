@@ -81,15 +81,32 @@ export interface TransferReply {
   fromWallet: string
   toWallet: string
   remainingAllowance: number
+  allowanceToday: number
+  /**
+   * Whether the move changed the daily allowance. False for spendable →
+   * spendable (money stayed in the same pool); true when it crossed the
+   * spendable/reserve boundary, because reserve wallets are excluded from
+   * spendableBalance (spec §12) so the allowance really does move.
+   */
+  allowanceChanged: boolean
 }
 
 /**
- * Wallet transfer (spec §6.5). The allowance does not change on a move, so the
- * anchor line says so explicitly rather than silently repeating the number.
+ * Wallet transfer (spec §6.5). Moving money between two spendable wallets
+ * leaves the allowance alone, and the reply says so rather than silently
+ * repeating a number the user might read as a change.
+ *
+ * A move into (or out of) a reserve wallet is different: it leaves the
+ * spendable pool, so the allowance genuinely shifts. Printing "jatah tidak
+ * berubah" there would be a lie on the same line as the changed number — the
+ * one thing this app cannot afford (spec §2).
  */
 export function formatTransfer(r: TransferReply): string {
+  const second = r.allowanceChanged
+    ? anchorLine(r.remainingAllowance, r.allowanceToday)
+    : `Sisa hari ini: ${formatRupiah(r.remainingAllowance)} (jatah tidak berubah)`
   return [
     `🔄 Pindah ${formatRupiah(r.amount)}: ${r.fromWallet} → ${r.toWallet}`,
-    `Sisa hari ini: ${formatRupiah(r.remainingAllowance)} (jatah tidak berubah)`,
+    second,
   ].join('\n')
 }

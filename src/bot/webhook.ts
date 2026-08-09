@@ -40,7 +40,24 @@ interface Allowance {
   allowanceToday: number
 }
 
-async function currentAllowance(settings: Settings): Promise<Allowance> {
+/**
+ * Raised when the transaction was committed but the allowance could not be
+ * read back. Distinguishing this from a failed write matters more than it
+ * looks: the reply is the user's only receipt, so telling them "gagal
+ * nyimpen" after a successful insert invites them to send the message again
+ * and silently double-count it — with no edit or delete flow until Phase 3.
+ */
+class AllowanceReadError extends Error {}
+
+async function currentAllowance(settings: Settings, wallets: Wallet[]): Promise<Allowance> {
+  try {
+    return await readAllowance(settings, wallets)
+  } catch (err) {
+    throw new AllowanceReadError(String(err))
+  }
+}
+
+async function readAllowance(settings: Settings, wallets: Wallet[]): Promise<Allowance> {
   const today = dayKeyOf(Date.now(), settings.dayStartHour)
   const cycle = cycleFor(today, settings)
   const [balance, transactions] = await Promise.all([
@@ -48,13 +65,24 @@ async function currentAllowance(settings: Settings): Promise<Allowance> {
     getTransactionsForDay(today),
   ])
 
+  // Spending charged to a reserve wallet must not enter the allowance math.
+  // spec §4.4's spentToday has no wallet filter, but §12 excludes reserve
+  // wallets from spendableBalance — so counting a reserve expense here would
+  // add money back into allowanceBasis that spendableBalance never saw leave,
+  // inflating today's allowance and then silently snapping it back tomorrow.
+  // Reconciling the two sections is a spec question (TODO.md); filtering at
+  // this boundary keeps the anchor number honest meanwhile.
+  const reserveIds = new Set(wallets.filter((w) => w.kind === 'reserve').map((w) => w.id))
+
   const result = computeAllowance({
     spendableBalance: balance,
-    transactionsToday: transactions.map((t) => ({
-      kind: t.kind,
-      amount: t.amount,
-      commitmentId: t.commitmentId,
-    })),
+    transactionsToday: transactions
+      .filter((t) => !reserveIds.has(t.walletId))
+      .map((t) => ({
+        kind: t.kind,
+        amount: t.amount,
+        commitmentId: t.commitmentId,
+      })),
     // Commitments are Phase 2; the parameter stays in the signature so adding
     // them later does not reshape domain/ (see AllowanceInput).
     unpaidCommitments: 0,
@@ -68,16 +96,22 @@ async function currentAllowance(settings: Settings): Promise<Allowance> {
   }
 }
 
+/** Case-insensitive exact match on wallet name; null when the user named none. */
+function matchWallet(name: string | null, wallets: Wallet[]): Wallet | null {
+  if (!name) return null
+  return wallets.find((w) => w.name.toLowerCase() === name.toLowerCase()) ?? null
+}
+
 /**
- * The wallet the user meant. A named wallet is matched case-insensitively; an
- * unnamed or unrecognised one falls back to the default spendable wallet, so a
- * typo never costs the user a round-trip (spec §12).
+ * The wallet an expense or income belongs to. A named wallet wins; anything
+ * unnamed or unrecognised falls back to the default spendable wallet, so a
+ * typo costs the user nothing (spec §12). Safe here because the fallback only
+ * picks which pocket the money came from — see handleTransfer for why a move
+ * cannot use it.
  */
 function resolveWallet(name: string | null, wallets: Wallet[]): Wallet {
-  if (name) {
-    const match = wallets.find((w) => w.name.toLowerCase() === name.toLowerCase())
-    if (match) return match
-  }
+  const match = matchWallet(name, wallets)
+  if (match) return match
   const spendable = wallets.find((w) => w.kind === 'spendable')
   if (!spendable) throw new Error('Tidak ada wallet spendable.')
   return spendable
@@ -97,10 +131,14 @@ async function handleExpense(
 ): Promise<string> {
   const amount = parsed.amount!
   const wallet = resolveWallet(parsed.wallet, wallets)
-  const category = await findOrCreateCategory(
-    parsed.category ?? FALLBACK_CATEGORY,
-    parsed.subcategory,
-  )
+  // A subcategory only means something under the category the model chose. If
+  // it named none, grafting the subcategory onto "Lainnya" would mint a
+  // duplicate of a node that already lives elsewhere in the tree (e.g. a
+  // second "Rokok" under Lainnya), which is the overlapping taxonomy §5.3
+  // rule 2 forbids — and it is permanent until Phase 3 adds category editing.
+  const category = parsed.category
+    ? await findOrCreateCategory(parsed.category, parsed.subcategory)
+    : await findOrCreateCategory(FALLBACK_CATEGORY, null)
   const intent = parsed.intent ?? FALLBACK_INTENT
 
   await createTransaction({
@@ -112,7 +150,7 @@ async function handleExpense(
     walletId: wallet.id,
   }, settings.dayStartHour)
 
-  const allowance = await currentAllowance(settings)
+  const allowance = await currentAllowance(settings, wallets)
   return formatExpense({
     item: parsed.item || 'Pengeluaran',
     amount,
@@ -137,7 +175,7 @@ async function handleIncome(
     walletId: wallet.id,
   }, settings.dayStartHour)
 
-  const allowance = await currentAllowance(settings)
+  const allowance = await currentAllowance(settings, wallets)
   return formatIncome({
     item: parsed.item || 'Pemasukan',
     amount,
@@ -147,9 +185,15 @@ async function handleIncome(
 }
 
 /**
- * Transfers (spec §6.5). ParsedInput carries a single `wallet` field, which for
- * a transfer is the destination ("pindah 500k ke Bank"); the source is the
- * default spendable wallet, or the next one along if that IS the destination.
+ * Transfers (spec §6.5). ParsedInput carries a single `wallet` field, so only
+ * one end of the move can be named; this treats it as the destination and
+ * takes the default spendable wallet as the source.
+ *
+ * Unlike expense and income, a transfer must NOT fall back to a default when
+ * the named wallet doesn't match. The fallback would invent an operand rather
+ * than pick a pocket: "pindah 500k ke BCA" against a wallet stored as "Bank"
+ * would resolve to the default, then move money between two wallets the user
+ * never mentioned — and confirm it. An unmatched name asks instead.
  */
 async function handleTransfer(
   parsed: ParsedInput,
@@ -161,7 +205,12 @@ async function handleTransfer(
     return '🤔 Cuma ada satu wallet, jadi belum ada tujuan pindahnya.'
   }
 
-  const to = resolveWallet(parsed.wallet, wallets)
+  const to = matchWallet(parsed.wallet, wallets)
+  if (!to) {
+    const names = wallets.map((w) => w.name).join(', ')
+    return `🤔 Pindah ke wallet mana? Yang ada: ${names}.`
+  }
+
   const from = wallets.find((w) => w.kind === 'spendable' && w.id !== to.id)
   if (!from) {
     return '🤔 Belum kebaca pindah dari wallet mana. Coba sebut asal dan tujuannya.'
@@ -175,12 +224,16 @@ async function handleTransfer(
     toWalletId: to.id,
   }, settings.dayStartHour)
 
-  const allowance = await currentAllowance(settings)
+  const allowance = await currentAllowance(settings, wallets)
   return formatTransfer({
     amount,
     fromWallet: from.name,
     toWallet: to.name,
     remainingAllowance: allowance.remainingAllowance,
+    allowanceToday: allowance.allowanceToday,
+    // Money leaving the spendable pool really does change the allowance
+    // (spec §12); only spendable → spendable leaves it untouched.
+    allowanceChanged: from.kind !== to.kind,
   })
 }
 
@@ -243,8 +296,19 @@ export async function handleMessage(text: string, chatId: number): Promise<strin
         return await handleIncome(parsed, wallets, settings)
       case 'transfer':
         return await handleTransfer(parsed, wallets, settings)
+      default:
+        // `kind` comes from JSON.parse, so the compiler's exhaustiveness proof
+        // does not bind at runtime. Without this the function would return
+        // undefined and the user would get no reply at all.
+        console.error('unknown parsed.kind', parsed.kind)
+        return '🤔 Belum kebaca maksudnya. Coba tulis ulang.'
     }
   } catch (err) {
+    if (err instanceof AllowanceReadError) {
+      console.error('allowance read failed after commit', err)
+      return `✅ ${formatRupiah(parsed.amount)} tersimpan, tapi jatah hari ini gagal dihitung. ` +
+        'Jangan kirim ulang — cek lagi sebentar lagi.'
+    }
     console.error('handleMessage write failed', err)
     return `⚠️ Gagal nyimpen ${formatRupiah(parsed.amount)}. Coba lagi.`
   }

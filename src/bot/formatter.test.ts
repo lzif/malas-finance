@@ -66,9 +66,28 @@ describe('formatTransfer', () => {
       fromWallet: 'CASH',
       toWallet: 'GoPay',
       remainingAllowance: 77_200,
+      allowanceToday: 104_347,
+      allowanceChanged: false,
     })
     expect(out).toBe(
       '🔄 Pindah Rp 500.000: CASH → GoPay\nSisa hari ini: Rp 77.200 (jatah tidak berubah)',
+    )
+  })
+
+  it('shows the real anchor line when the move crossed into a reserve wallet', () => {
+    // Moving out of the spendable pool genuinely lowers the allowance (spec
+    // §12), so claiming "jatah tidak berubah" here would contradict the very
+    // number printed beside it.
+    const out = formatTransfer({
+      amount: 500_000,
+      fromWallet: 'CASH',
+      toWallet: 'Tabungan',
+      remainingAllowance: 50_000,
+      allowanceToday: 50_000,
+      allowanceChanged: true,
+    })
+    expect(out).toBe(
+      '🔄 Pindah Rp 500.000: CASH → Tabungan\nSisa hari ini: Rp 50.000 dari Rp 50.000',
     )
   })
 })
