@@ -1,20 +1,99 @@
-import { mount } from 'svelte'
-import App from './App.svelte'
-import './app.css'
-import { appState } from './lib/stores/appState.svelte'
+// main.ts — Deno Deploy entry point (spec §11). HTTP transport only: route,
+// verify Telegram's shared secret, hand the text to bot/webhook.ts, send the
+// reply back. All product logic lives behind `handleMessage`.
+//
+// Env (Deno Deploy dashboard):
+//   TELEGRAM_BOT_TOKEN        — from @BotFather
+//   TELEGRAM_WEBHOOK_SECRET   — the secret_token set on setWebhook; Telegram
+//                               echoes it in X-Telegram-Bot-Api-Secret-Token
+//   DATABASE_URL              — PostgreSQL connection string
+//   GOOGLE_AI_API_KEY         — Gemini/Gemma via Google AI Studio
+//
+// No TZ setting is required: the calendar day is computed against an
+// explicitly named zone (domain/day.ts, APP_TIME_ZONE), not the process's.
 
-const target = document.getElementById('app')
-if (!target) throw new Error('#app element not found')
+import { handleMessage } from './bot/webhook.ts'
 
-// Request persistent storage (spec §9.1). Without this, the browser treats
-// IndexedDB as a cache that can be evicted when space runs low — and what
-// gets evicted is the entire financial record. Best-effort: the browser may
-// refuse, so its failure must not stop the app.
-void navigator.storage?.persist?.().catch(() => undefined)
+const BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN') ?? ''
+const WEBHOOK_SECRET = Deno.env.get('TELEGRAM_WEBHOOK_SECRET') ?? ''
 
-// Reactive clock for day rollover (see AppState.startClock).
-appState.startClock()
+/** Minimal shape of the Telegram update fields this skeleton reads. */
+interface TelegramUpdate {
+  message?: {
+    chat: { id: number }
+    text?: string
+  }
+}
 
-const app = mount(App, { target })
+async function sendMessage(chatId: number, text: string): Promise<void> {
+  if (!BOT_TOKEN) {
+    console.warn('TELEGRAM_BOT_TOKEN not set — skipping sendMessage')
+    return
+  }
+  const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ chat_id: chatId, text }),
+  })
+  if (!res.ok) {
+    console.error('sendMessage failed', res.status, await res.text())
+  }
+}
 
-export default app
+async function handleWebhook(req: Request): Promise<Response> {
+  // Verify the shared secret Telegram echoes back (spec §15 #5). This header
+  // is the entire security model, so it fails CLOSED: an unset secret used to
+  // skip the check, which was harmless when the handler only echoed text but
+  // is not now that it writes to the ledger and spends Gemini calls. With the
+  // check skipped, the first stranger to POST here would claim
+  // settings.telegram_chat_id and lock the owner out of their own bot, with no
+  // reset path outside direct database access.
+  if (!WEBHOOK_SECRET) {
+    console.error('TELEGRAM_WEBHOOK_SECRET is not set — refusing all webhook requests')
+    return new Response('forbidden', { status: 403 })
+  }
+  if (req.headers.get('x-telegram-bot-api-secret-token') !== WEBHOOK_SECRET) {
+    return new Response('forbidden', { status: 403 })
+  }
+
+  let update: TelegramUpdate
+  try {
+    update = await req.json()
+  } catch {
+    return new Response('bad request', { status: 400 })
+  }
+
+  const message = update.message
+  if (message?.text) {
+    // handleMessage turns its own failures into replies; this catch only
+    // covers the unexpected, so one bad update never leaves Telegram retrying
+    // the same message forever.
+    let reply: string
+    try {
+      reply = await handleMessage(message.text, message.chat.id)
+    } catch (err) {
+      console.error('handleMessage threw', err)
+      reply = '⚠️ Ada error tak terduga. Coba lagi.'
+    }
+    await sendMessage(message.chat.id, reply)
+  }
+
+  // Telegram only needs a 200 to consider the update delivered.
+  return new Response('ok')
+}
+
+export function handler(req: Request): Promise<Response> | Response {
+  const url = new URL(req.url)
+
+  if (req.method === 'GET' && url.pathname === '/') {
+    return new Response('MalasFinance v3 bot — ok')
+  }
+  if (req.method === 'POST' && url.pathname === '/webhook') {
+    return handleWebhook(req)
+  }
+  return new Response('not found', { status: 404 })
+}
+
+// Deno Deploy (and `deno serve` locally, via the deno.json tasks) invokes the
+// default export's fetch handler.
+export default { fetch: handler }

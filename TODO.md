@@ -2,130 +2,161 @@
 
 `spec.md` says where this is going. This file says where it actually is.
 
-Kept deliberately as one file: the phase plan already lives in spec §12, and a
-second document restating it would only drift out of sync with the first.
-
-Last updated: 2026-07-28
+Last updated: 2026-08-09
 
 ## Pick up here
 
-Nothing blocking is left in Phase 1. Next up: Phase 2 (the Sadar dashboard).
+**The bot works end to end.** A Telegram message now goes all the way through:
+AI parse → route → repository write → allowance recompute → formatted reply.
+Verified against live Neon + live Gemini (see below). What is left is the
+surrounding experience, not the core loop.
 
-Balance adjustment (was #1 here) is done — each wallet row on the Komitmen
-screen has a "sesuaikan saldo" action; entering the actual balance previews
-the difference and, on save, records it as a visible `#koreksi` transaction
-(`in` or `out`; `intent = 'routine'` for `out`, `intent = null` for `in` since
-§5.1 requires intent iff `out`) rather than overwriting anything silently
-(spec §7.4). Verified live in the browser: both directions on the same
-wallet (Rp 500.000 → 450.000 → 600.000 → 700.000), correct preview text
-("keluar"/"masuk") before each save, correct running balance after each,
-both transactions showing in Riwayat with the right sign, tag, and intent,
-no console errors.
+Concrete next steps, roughly in order:
 
-`manual` cycle mode in onboarding (was #2 here) is done — the third onboarding
-question now offers all three paths from spec §7.5, including "tahu tanggal
-masuk berikutnya, tapi tidak tetap" with a date picker clamped to today or
-later (bound to the reactive `appState.today`, not a raw `Date.now()`, so it
-can't go stale if onboarding is left open across midnight). Verified live in
-the browser: all 3 choices render, picking a manual date 4 days out and
-completing onboarding produced an anchor number of exactly Rp 100.000 (Rp
-500.000 balance / 5-day cycle) — proving `cycleManualEnd` was actually saved
-and used, not silently dropped to the 30-day rolling fallback (which would
-have shown ~Rp 16.700).
+1. ~~**`src/db/repo/*.ts`**~~ — **done.** Settings, wallets, transactions,
+   categories — all verified against real Neon (19 integration tests). Lazy
+   `getSql()` in `connection.ts` so permissionless `deno test` stays green.
+2. ~~**Wire the real flow**~~ — **done**, in `src/bot/webhook.ts`. `main.ts` is
+   now transport only. Live smoke against real Neon + Gemini:
+   - `rokok surya 27.5k abis lembur` → `💾 rokok surya — Rp 27.500 [IMPULSIF] / 📁 Rokok & Sejenisnya`
+   - `+gajian 2.4jt` → income to CASH, allowance jumps to Rp 104.347
+   - `makan siang 25rb` → `[RUTIN]`, `📁 Makanan & Minuman`
+   - `helm` (no amount) → clarify: "Berapa harga helm?"
+   - a different `chat_id` → refused (single-user guard, §15 #5)
 
-Trash restore UI (was #1 here) is done — History has a Sampah sub-tab with
-restore and permanent-delete, typed `HAPUS` confirmation for entries at or
-above `bigDeleteThreshold` and for emptying the trash entirely (spec §9.4).
-Verified live in the browser: delete → restore, delete → permanent-delete
-(both below and at-threshold amounts), empty-trash confirmation.
+   All four messages matched **existing seed categories** — zero new categories
+   created, which is the match-first rule (§5.3) actually holding under a live
+   model rather than in a unit test. Test rows were removed afterwards; the DB
+   is back to a clean slate.
+3. **Onboarding** (spec §13): the three-question first-run flow, persisting to
+   `settings` + creating the CASH wallet. Today a fresh install silently gets a
+   `CASH` wallet at Rp 0 and claims the first `chat_id` that talks to it —
+   workable, but not the intended first-run experience.
+4. **Fallback + retry** (spec §15 #8): Gemma fallback when Gemini errors/rate-limits.
+   Right now a Gemini outage returns "Parser lagi ngadat" and the message is lost.
 
-Filesystem backup (was #1 here) is done — Capacitor is in, `Directory.Data`
-snapshots + weekly `Documents` copy verified on a real device 2026-07-28.
-Two pieces of it stay open, not blocking anything above: rotation past 7
-daily files is untested (needs a real week to elapse), and uninstall-survival
-is untested (needs the Phase 4 import UI, which also doesn't exist yet).
+### The day boundary now names its own timezone — fixed, no env var
 
-Then Phase 2 (the Sadar dashboard). Nothing in Phase 2 is started.
+`dayKeyOf` used to read the *process's* local calendar day via
+`getFullYear/getMonth/getDate`, and Deno Deploy isolates run as UTC. Every
+transaction logged between 00:00 and 07:00 WIB was filed against **yesterday**
+— landing on a day whose allowance was already spent while the new day still
+read full, with the cycle rolling over a day late. `dayStartHour` could not
+compensate: it only shifts backwards (0..6).
 
-**Before adding features, use the app on a phone for a few days.** Every check so
-far is automated — tests, types, build, HTTP status. None of them prove the
-numbers look sane to a human or that the keypad is comfortable under a thumb. A
-broken keypad layout once passed the entire suite and was only caught by reading
-the CSS.
+`domain/day.ts` now formats against an explicitly named zone
+(`APP_TIME_ZONE = 'Asia/Jakarta'`) using `Intl.DateTimeFormat`. Nothing has to
+be configured at deploy time, and `deno test` no longer depends on the zone the
+suite runs in. Verified: with `TZ` unset and the process on `Aug 09 18:20 UTC`,
+`kopi 18k` stored `day_key = 2026-08-10` — the WIB date. Two regression tests
+pin it, one asserting a raw UTC instant so the test fails if this ever goes
+back to process-local time.
+
+The `timeZone` parameter is threaded through rather than reading the constant
+directly, so promoting it to a `timezone` column on `settings` is a small
+change if it ever needs to vary.
+
+Related, still open: `createTransaction`'s future-dated guard builds "end of
+today" with `setHours(23,59,59,999)`, which is still process-local. Harmless
+while `at` always defaults to now, but it will be off by the UTC/WIB offset the
+moment a caller passes an explicit `at` (editing a past transaction, Phase 3).
+
+Note that the "timezone" entry under carried-over limits below is a *different*
+bug (a device changing zones); its reasoning — "the clock is server-side, one
+timezone" — is what hid this one, because that one timezone was UTC, not
+Jakarta.
+
+### Needs a spec decision: reserve wallets in the allowance
+
+spec §4.4's `spentToday` has no wallet filter, but §12 excludes reserve wallets
+from `spendableBalance`. Taken literally together, an expense charged to a
+reserve wallet adds money back into `allowanceBasis` that `spendableBalance`
+never saw leave: `beli laptop 2jt dari tabungan` inflated the allowance and
+then silently snapped it back the next day. `bot/webhook.ts` now filters
+reserve-wallet transactions out of `transactionsToday` at the boundary, which
+keeps the anchor honest, but `domain/` and the spec still disagree on paper.
+Decide which section is authoritative and make them match.
+
+Known rough edges (not blocking, worth a pass):
+
+- The model returns `item` in the user's original casing (`rokok surya`), while
+  spec §6.1 shows it title-cased (`Rokok Surya`). A prompt fix, not a code fix.
+- Transfers can only name one end. `ParsedInput` has a single `wallet` field, so
+  "pindah 500k dari tabungan ke cash" cannot express its source; the code treats
+  the named wallet as the destination and takes the default spendable wallet as
+  the source. It now refuses to guess when the name doesn't match a wallet
+  (rather than fabricating both operands), but a reserve → spendable withdrawal
+  is still unrepresentable. Needs a `fromWallet` in the parser schema.
+- `ensureWallets` is check-then-act with no `UNIQUE` on `wallets.name`, so two
+  messages arriving together on a fresh install could each insert a `CASH`
+  wallet. Tiny window, single user; a unique index would close it.
+
+Setup for the next session: `deno task db:migrate` applies `schema.sql` + `seed.sql`
+to `DATABASE_URL` (idempotent, verified). Live tests need `--allow-net --allow-env`
+with `GOOGLE_AI_API_KEY` / `DATABASE_URL` set; without them they skip.
+
+**Before trusting the numbers in production, reconcile one full cycle by hand**
+(spec §17 criterion 7 — the most important one). The domain math is ported and
+unit-green, but "unit tests pass" is not "the anchor number matched my wallet for
+a month".
 
 ---
 
-## Phase 1 — Foundation (spec §12)
+## Phase 1 — Foundation (spec §16)
 
 | Item | Status |
 |---|---|
-| Data model, Dexie schema | done |
-| Repository integrity rules (§5.1) | done |
-| `domain/` pure functions + tests | done |
-| Onboarding | done — all 3 cycle paths (monthly-day, manual, rolling) |
-| Record screen, anchor number | done |
-| Anti-habituation mechanisms (§7.1) | done — all three |
-| Commitments, `bill` + `saving` (§4.3) | done |
-| Automatic backup (§9.1) | done — `Directory.Data` daily snapshots + weekly `Documents` copy verified on real device (2026-07-28); rotation-past-7-days untested (needs real week), uninstall-survival untested (no import UI yet, see Phase 4) |
-| Balance adjustment (§7.4) | done — "sesuaikan saldo" per wallet on the Komitmen screen, creates a visible `#koreksi` transaction |
-| Trash restore UI (§7.3) | done — Sampah sub-tab, restore, typed-confirm permanent delete (§9.4) |
+| Deno project setup (`deno.json`, tasks, import map, CI) | done |
+| `domain/` ported from v2 + tests green on Deno | done — money, day, cycle, commitment, allowance, runway, types (39 tests / 96 steps) |
+| `parseAmount` — Indonesian amount shorthand (§6.2) | done — k/rb/ribu, jt/juta/m, dotted-grouping disambiguation, tested |
+| `bot/formatter.ts` — pure reply formatting (§6, §8) | started — expense/income/transfer + anchor line, tested. Nightly/weekly/ask formatting still to come |
+| PostgreSQL schema (`db/schema.sql`) | done — matches spec §5.1 |
+| Seed data (`db/seed.sql`) — seed categories + settings row | done — idempotent, **verified against real Neon** (two migrate runs stay 11 top / 30 sub / 0 dupes) |
+| `db/connection.ts` (Neon serverless HTTP driver) | done — connects to Neon PG 17 over HTTPS; raw TCP is blocked on Deno Deploy so the HTTP driver is required, not optional |
+| `db/migrate.ts` + `db/sql.ts` (idempotent migration runner) | done — `deno task db:migrate`; `splitStatements` unit-tested (a live run caught a comment-semicolon split bug, now pinned) |
+| `bot/parser.ts` (AI parser, Gemini) | done — **verified against live Gemini**: rokok→impulse, makan siang→routine, +gajian→income. Hard rules (§7.2) enforced in code, not left to the model |
+| `main.ts` webhook entry | done — transport only: routes, verifies the secret, delegates to `bot/webhook.ts`, sends the reply |
+| `db/repo/*` with integrity rules (§5.2) | done — settings, wallets, transactions, categories; **verified against real Neon** (19 integration tests); lazy `getSql()` so permissionless `deno test` stays green |
+| Real expense/income/transfer flow (parser → repo → allowance → reply) | done — `bot/webhook.ts`; **verified live** (Neon + Gemini) across expense/income/transfer/clarify + the single-user guard |
+| Onboarding (§13) | not started |
 
-## Phase 2 — Sadar (dashboard)
+## Phase 2 — Commitments (spec §16)
 
-Not started. Impulse ratio, 28-day SVG sparkline, tag breakdown, weekly
-comparison, intent audit, History filters.
+Not started. Registration via natural language, payment flow, allowance deduction,
+due-date reminders. The domain functions (`domain/commitment.ts`) are ported and
+tested; only the bot/repo wiring is missing.
 
-## Phase 3 — Voice (notifications)
+## Phase 3 — Review (spec §16)
 
-Not started. Needs Capacitor, so it also loses the instant browser dev loop
-(§11.1). `NotifSettings` already exists in the schema and is unused.
+Not started. Nightly summary, weekly audit, edit-via-reply, category management,
+new-category flagging. Needs `Deno.cron` (`src/scheduled/nightly.ts`, `weekly.ts`).
 
-## Phase 4 — Release
+## Phase 4 — Dashboard (spec §16)
 
-Not started. Import with preview (§9.2) — the parse and preview functions exist
-in `db/backup.ts` but nothing calls them. Markdown export, APK pipeline,
-keystore into GitHub Secrets.
+Not started. Read-only Telegram WebApp (`src/web/`): impulse ratio, 28-day
+sparkline, weekly comparison, intent/category breakdown, commitment status.
 
 ---
 
-## Known defects, deliberately unfixed
+## Carried-over known limits (from v2, still true in the ported domain)
 
-Each was found by review, verified in the code, and judged not worth fixing yet
-at single-user scale. None are forgotten; none are safe to forget.
+Each was found by review, verified in the code, and judged not worth fixing at
+single-user scale. None are forgotten.
 
-- **`allActiveTransactions()` scans the whole table** on every mutation. The
-  `deletedAt` index cannot help: IndexedDB does not index `null` keys, so
-  querying it would require a sentinel value and that contradicts the
-  `deletedAt: number | null` model in spec §5. Fine at a few thousand rows.
-- **`dayKey` values become inconsistent if the device changes timezone.**
-  Recorded in spec §10.1 as a required test; no code handles it.
 - **Rolling mode does not surface overdue bills.** In `rolling` mode the cycle
   starts today, so a bill that fell due earlier this month is outside the
-  commitment window and does not reduce the allowance. In rolling mode there is
-  no cycle for it to be overdue *within*; fixing it properly means giving
-  rolling mode a real period, which belongs to a spec revision, not a patch.
-- **`previewBackup.walletCount` is the wallet count in the file, not the number
-  of wallets that would be newly created.** Computing the delta needs the
-  current wallet list, which a pure function does not have. Matters only once
-  the import UI exists.
-- **Rapid mode toggles queue unbounded tag queries.** A request token means only
-  the newest result is applied, so this is wasted work rather than a wrong
-  answer.
-- **Backup lives in localStorage, not the filesystem.** Different eviction
-  policy from IndexedDB, so it is real redundancy — but it is not the
-  filesystem and shared-Documents copies §9.1 asks for.
-- **A downward `#koreksi` correction (`kind: 'out'`) counts toward
-  `dailySpendMap` (and so toward runway's daily average) on the day it is
-  entered**, even though the drift it corrects usually accrued on earlier,
-  unrecorded days. `dailySpendMap` only sums `out` transactions, so an upward
-  correction (`kind: 'in'`) is unaffected. Excluding the `out` case needs a
-  rule spec §7.4 does not state, and the alternative — leaving the average
-  built on a balance that was already known to be wrong — is worse. Only
-  matters for large corrections; not worth machinery at single-user scale.
+  commitment window and does not reduce the allowance. There is no cycle for it
+  to be overdue *within*; a proper fix means giving rolling mode a real period,
+  which belongs to a spec revision, not a patch.
+- **`dayKey` values become inconsistent if the device/server changes timezone.**
+  A required test in v2, never handled in code. Less likely to bite now that the
+  clock is server-side (Deno Deploy, one timezone) rather than a roaming phone,
+  but the class of bug is unchanged.
 
 ## Sharpest risk
 
-Habituation (spec §15). The anchor number becoming wallpaper is the failure
-mode that kills the whole premise, and no test can catch it. If the impulse
-ratio has not moved after two months of real use, the anti-habituation
-mechanisms failed — not the user.
+Habituation (spec §2). The anchor number becoming wallpaper is the failure mode
+that kills the whole premise, and no test can catch it. v3's bet is that a bot
+that *speaks first* (K3) and an AI that categorizes *honestly* (K2) resist
+habituation better than a screen the user had to open. If the impulse ratio has
+not moved after two months of real use, the mechanism failed — not the user.
