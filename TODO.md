@@ -2,26 +2,47 @@
 
 `spec.md` says where this is going. This file says where it actually is.
 
-Last updated: 2026-08-08 (the pivot commit)
+Last updated: 2026-08-09
 
 ## Pick up here
 
-The v3 pivot foundation is in, and the two hardest external integrations are now
-built and **verified against the real services**: PostgreSQL (Neon) and the AI
-parser (Gemini). **Next: the repository layer and wiring the real flow** to
-replace the walking skeleton in `src/main.ts`.
+**The bot works end to end.** A Telegram message now goes all the way through:
+AI parse → route → repository write → allowance recompute → formatted reply.
+Verified against live Neon + live Gemini (see below). What is left is the
+surrounding experience, not the core loop.
 
 Concrete next steps, roughly in order:
 
 1. ~~**`src/db/repo/*.ts`**~~ — **done.** Settings, wallets, transactions,
    categories — all verified against real Neon (19 integration tests). Lazy
    `getSql()` in `connection.ts` so permissionless `deno test` stays green.
-2. **Wire the real flow in `main.ts` / `bot/webhook.ts`**: `parseMessage`
-   (done) → route by `kind` → repo write → `computeAllowance` (ported) →
-   `bot/formatter.ts` (started) → reply. Handle the `clarify` branch (spec §6.7).
+2. ~~**Wire the real flow**~~ — **done**, in `src/bot/webhook.ts`. `main.ts` is
+   now transport only. Live smoke against real Neon + Gemini:
+   - `rokok surya 27.5k abis lembur` → `💾 rokok surya — Rp 27.500 [IMPULSIF] / 📁 Rokok & Sejenisnya`
+   - `+gajian 2.4jt` → income to CASH, allowance jumps to Rp 104.347
+   - `makan siang 25rb` → `[RUTIN]`, `📁 Makanan & Minuman`
+   - `helm` (no amount) → clarify: "Berapa harga helm?"
+   - a different `chat_id` → refused (single-user guard, §15 #5)
+
+   All four messages matched **existing seed categories** — zero new categories
+   created, which is the match-first rule (§5.3) actually holding under a live
+   model rather than in a unit test. Test rows were removed afterwards; the DB
+   is back to a clean slate.
 3. **Onboarding** (spec §13): the three-question first-run flow, persisting to
-   `settings` + creating the CASH wallet.
+   `settings` + creating the CASH wallet. Today a fresh install silently gets a
+   `CASH` wallet at Rp 0 and claims the first `chat_id` that talks to it —
+   workable, but not the intended first-run experience.
 4. **Fallback + retry** (spec §15 #8): Gemma fallback when Gemini errors/rate-limits.
+   Right now a Gemini outage returns "Parser lagi ngadat" and the message is lost.
+
+Known rough edges from the live run (not blocking, worth a pass):
+
+- The model returns `item` in the user's original casing (`rokok surya`), while
+  spec §6.1 shows it title-cased (`Rokok Surya`). A prompt fix, not a code fix.
+- Transfers assume `parsed.wallet` is the *destination* and take the default
+  spendable wallet as the source, because `ParsedInput` has only one wallet
+  field. A two-wallet message ("pindah 500k dari CASH ke Bank") cannot express
+  its source. Needs a `fromWallet` in the parser schema to do properly.
 
 Setup for the next session: `deno task db:migrate` applies `schema.sql` + `seed.sql`
 to `DATABASE_URL` (idempotent, verified). Live tests need `--allow-net --allow-env`
@@ -47,9 +68,9 @@ a month".
 | `db/connection.ts` (Neon serverless HTTP driver) | done — connects to Neon PG 17 over HTTPS; raw TCP is blocked on Deno Deploy so the HTTP driver is required, not optional |
 | `db/migrate.ts` + `db/sql.ts` (idempotent migration runner) | done — `deno task db:migrate`; `splitStatements` unit-tested (a live run caught a comment-semicolon split bug, now pinned) |
 | `bot/parser.ts` (AI parser, Gemini) | done — **verified against live Gemini**: rokok→impulse, makan siang→routine, +gajian→income. Hard rules (§7.2) enforced in code, not left to the model |
-| `main.ts` webhook entry | walking skeleton — verifies secret, parses amount, echoes; not yet wired to parser/DB/allowance |
+| `main.ts` webhook entry | done — transport only: routes, verifies the secret, delegates to `bot/webhook.ts`, sends the reply |
 | `db/repo/*` with integrity rules (§5.2) | done — settings, wallets, transactions, categories; **verified against real Neon** (19 integration tests); lazy `getSql()` so permissionless `deno test` stays green |
-| Real expense/income/transfer flow (parser → repo → allowance → reply) | not started |
+| Real expense/income/transfer flow (parser → repo → allowance → reply) | done — `bot/webhook.ts`; **verified live** (Neon + Gemini) across expense/income/transfer/clarify + the single-user guard |
 | Onboarding (§13) | not started |
 
 ## Phase 2 — Commitments (spec §16)
