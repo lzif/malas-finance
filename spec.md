@@ -75,9 +75,9 @@ Nightly summaries, weekly audits, commitment reminders. The bot initiates conver
 | Component | Choice | Rationale |
 |---|---|---|
 | Runtime | Deno Deploy (free tier) | Zero-config deployment, no build step |
-| Database | PostgreSQL | Durable, relational, no eviction risk |
+| Database | PostgreSQL (Neon), via the serverless HTTP driver (`@neondatabase/serverless`) | Durable, relational, no eviction risk. The HTTP driver is required, not a preference: Deno Deploy (and this build environment) only allow outbound HTTPS, so a raw TCP client on :5432 hangs. Each query is a stateless HTTPS round trip, which fits the per-webhook request/response model |
 | Bot framework | Telegram Bot API via webhook | No polling, no long-running process needed |
-| AI SDK | Vercel AI SDK (`ai` package, via npm: specifier) | Unified interface, provider-agnostic |
+| AI SDK | Google AI Studio Gemini REST directly (JSON mode) for now; Vercel AI SDK is a tracked refinement | The prompt, response schema, and post-processing carry the product logic and are transport-independent; a verified working parser over plain REST beats an unverified SDK integration. See §15 #2 |
 | LLM (primary) | Gemini Flash via Google AI Studio | Free tier, fast, good at structured extraction |
 | LLM (fallback) | Gemma via Google AI Studio | Free tier, sufficient for simple parsing tasks |
 | Web UI | Telegram WebApp (read-only) | Summary/dashboard attached to bot, no separate hosting |
@@ -284,13 +284,15 @@ src/
     *.test.ts          ← ported v2 suite, runs on `deno test`
   db/
     schema.sql         ← authoritative DDL
-    seed.sql           ← seed categories + singleton settings row (idempotent)
-    connection.ts      ← PostgreSQL connection            (Phase 1)
-    repo/              ← repository layer, the only write path (Phase 1)
+    seed.sql           ← seed categories + singleton settings row (idempotent, verified)
+    connection.ts      ← Neon serverless HTTP connection    (done)
+    migrate.ts         ← applies schema.sql + seed.sql      (done; `deno task db:migrate`)
+    sql.ts             ← pure SQL text helpers (statement split)  (done, tested)
+    repo/              ← repository layer, the only write path (Phase 1, next)
       transactions.ts  wallets.ts  commitments.ts  categories.ts  settings.ts
   bot/
     webhook.ts         ← Telegram webhook handler         (Phase 1; skeleton in main.ts)
-    parser.ts          ← AI input parser (Gemini Flash)   (Phase 1)
+    parser.ts          ← AI input parser (Gemini)          (done, verified live)
     formatter.ts       ← response message formatting       (started, pure + tested)
     commands.ts        ← fallback slash commands           (Phase 1)
   scheduled/
@@ -348,7 +350,7 @@ Multi-currency · multi-user · sync across devices · budget envelopes · recei
 | # | Question | Resolution |
 |---|---|---|
 | 1 | Category taxonomy | Dynamic, AI-managed, seed list in §5.3 |
-| 2 | AI prompt design | Implementation detail — follows §7 rules, uses AI SDK, prompt evolves with usage |
+| 2 | AI prompt design | `bot/parser.ts` prompts Gemini (gemini-2.5-flash) in JSON mode with a response schema, returning `{ kind, amount, item, intent, category, subcategory, wallet, dueDay, notes, question }`. The §7.2 "Always IMPULSIF" rules are enforced in code (`enforceHardRules`), not left to the model — the label is non-negotiable by design. Amount is backfilled deterministically from text (§6.2) if the model misses it. Transport is direct REST for now; the Vercel AI SDK swap is a tracked refinement |
 | 3 | Telegram message formatting | Pure functions in `bot/formatter.ts`, pinned by tests |
 | 4 | Web dashboard design | Read-only, metrics in §10, layout decided during build |
 | 5 | Deno Deploy architecture | Webhook verified by a shared secret echoed in the `X-Telegram-Bot-Api-Secret-Token` header; cron via `Deno.cron` |

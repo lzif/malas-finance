@@ -6,25 +6,30 @@ Last updated: 2026-08-08 (the pivot commit)
 
 ## Pick up here
 
-The v3 pivot foundation is in. **Next: continue Phase 1** — the database layer and
-the real message flow that replaces the walking skeleton in `src/main.ts`.
+The v3 pivot foundation is in, and the two hardest external integrations are now
+built and **verified against the real services**: PostgreSQL (Neon) and the AI
+parser (Gemini). **Next: the repository layer and wiring the real flow** to
+replace the walking skeleton in `src/main.ts`.
 
 Concrete next steps, roughly in order:
 
-1. **`src/db/connection.ts`** — a PostgreSQL connection for Deno Deploy (postgres.js
-   via `npm:postgres`, or `jsr:@db/postgres`). Read `DATABASE_URL` from the env.
-2. **`src/db/repo/*.ts`** — the repository layer, the *only* write path, enforcing
+1. **`src/db/repo/*.ts`** — the repository layer, the *only* write path, enforcing
    every integrity rule in spec §5.2 (not just the DB CHECKs). Start with
    `settings.ts`, `wallets.ts`, `transactions.ts`; `categories.ts` needs the
-   match-first / no-overlap logic from §5.3; `commitments.ts` is Phase 2.
-   These need integration tests against a real Postgres (spec §16 testing row).
-3. **`src/bot/parser.ts`** — the AI parser (Gemini Flash via the `ai` package),
-   returning a structured `{ kind, amount, item, intent, category, wallet, notes }`.
-   Mock its output in tests; never hit a live LLM in the suite. `parseAmount`
-   (already done, `domain/money.ts`) is the deterministic amount extractor it leans on.
-4. **Wire the real flow in `main.ts` / `bot/webhook.ts`**: parse → route → repo write
-   → `computeAllowance` (already ported) → `bot/formatter.ts` (already started) → reply.
-5. **Onboarding** (spec §13): the three-question first-run flow.
+   match-first / no-overlap logic from §5.3; `commitments.ts` is Phase 2. Use the
+   `sql` tagged template from `db/connection.ts`. Add integration tests under
+   `src/db/` gated on `DATABASE_URL` (skip when unset, like the live parser test)
+   so CI without creds stays green. `db/migrate.ts` already applies the schema.
+2. **Wire the real flow in `main.ts` / `bot/webhook.ts`**: `parseMessage`
+   (done) → route by `kind` → repo write → `computeAllowance` (ported) →
+   `bot/formatter.ts` (started) → reply. Handle the `clarify` branch (spec §6.7).
+3. **Onboarding** (spec §13): the three-question first-run flow, persisting to
+   `settings` + creating the CASH wallet.
+4. **Fallback + retry** (spec §15 #8): Gemma fallback when Gemini errors/rate-limits.
+
+Setup for the next session: `deno task db:migrate` applies `schema.sql` + `seed.sql`
+to `DATABASE_URL` (idempotent, verified). Live tests need `--allow-net --allow-env`
+with `GOOGLE_AI_API_KEY` / `DATABASE_URL` set; without them they skip.
 
 **Before trusting the numbers in production, reconcile one full cycle by hand**
 (spec §17 criterion 7 — the most important one). The domain math is ported and
@@ -42,12 +47,13 @@ a month".
 | `parseAmount` — Indonesian amount shorthand (§6.2) | done — k/rb/ribu, jt/juta/m, dotted-grouping disambiguation, tested |
 | `bot/formatter.ts` — pure reply formatting (§6, §8) | started — expense/income/transfer + anchor line, tested. Nightly/weekly/ask formatting still to come |
 | PostgreSQL schema (`db/schema.sql`) | done — matches spec §5.1 |
-| Seed data (`db/seed.sql`) — seed categories + settings row | done — idempotent |
-| `main.ts` webhook entry | walking skeleton — verifies secret, parses amount, echoes; no AI/DB/allowance yet |
-| `db/connection.ts` | not started |
+| Seed data (`db/seed.sql`) — seed categories + settings row | done — idempotent, **verified against real Neon** (two migrate runs stay 11 top / 30 sub / 0 dupes) |
+| `db/connection.ts` (Neon serverless HTTP driver) | done — connects to Neon PG 17 over HTTPS; raw TCP is blocked on Deno Deploy so the HTTP driver is required, not optional |
+| `db/migrate.ts` + `db/sql.ts` (idempotent migration runner) | done — `deno task db:migrate`; `splitStatements` unit-tested (a live run caught a comment-semicolon split bug, now pinned) |
+| `bot/parser.ts` (AI parser, Gemini) | done — **verified against live Gemini**: rokok→impulse, makan siang→routine, +gajian→income. Hard rules (§7.2) enforced in code, not left to the model |
+| `main.ts` webhook entry | walking skeleton — verifies secret, parses amount, echoes; not yet wired to parser/DB/allowance |
 | `db/repo/*` with integrity rules (§5.2) | not started |
-| `bot/parser.ts` (AI parser) | not started |
-| Real expense/income/transfer flow | not started |
+| Real expense/income/transfer flow (parser → repo → allowance → reply) | not started |
 | Onboarding (§13) | not started |
 
 ## Phase 2 — Commitments (spec §16)
