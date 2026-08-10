@@ -195,6 +195,9 @@ describe('transactions repo', () => {
       expect(tx.kind).toBe('out')
       expect(tx.amount).toBe(27_500)
       expect(tx.dayKey).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+      // Timestamp reads are canonical ISO 8601, not the driver's Date.toString()
+      // (postgres.js returns timestamptz as a JS Date — see db/rows.ts).
+      expect(tx.at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
 
       let bal = await walletBalance(w.id)
       expect(bal).toBe(72_500)

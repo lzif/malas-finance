@@ -1,4 +1,5 @@
 import { getSql } from '../connection.ts'
+import { toIso } from '../rows.ts'
 
 type Row = Record<string, unknown>
 
@@ -16,7 +17,7 @@ function rowToCategory(row: Record<string, unknown>): Category {
     name: row.name as string,
     parentId: (row.parent_id as string) ?? null,
     isSeed: row.is_seed as boolean,
-    createdAt: String(row.created_at),
+    createdAt: toIso(row.created_at),
   }
 }
 
