@@ -13,18 +13,29 @@ experience, not the core loop.
 
 ### Deployment setup the owner must do once (in console.deno.com)
 
-1. **Create the app** named `malas-finance` (the deploy workflow passes
-   `--app malas-finance`; change both if you name it differently).
+Deploy is via **Deno's Git integration**: the app is linked to the GitHub repo
+and deploys the production branch (`main`) on every push — no workflow, no
+deploy token. (There is no `deno deploy` Actions workflow; `ci.yml` still runs
+the gates on push/PR.) **The new stack must be merged to `main` first** — until
+then `main` is the old Neon-HTTP code, which cannot talk to the built-in
+Postgres.
+
+1. **Create the app** linked to `lzif/malas-finance`, root dir, entrypoint
+   `src/main.ts`, no build command. Production URL:
+   `https://malas-finance.lzif.deno.net`.
 2. **Provision the built-in Postgres** for the app. It injects `DATABASE_URL`
-   automatically — no dashboard env entry for it.
+   automatically — do not set it by hand.
 3. **Run the migration** against that DB once: set `DATABASE_URL` locally to the
    built-in DB's connection string and `deno task db:migrate` (applies
    `schema.sql` + `seed.sql`, idempotent).
-4. **Load the three secrets** from a local `.env` (see `.env.example`):
-   `deno deploy env load .env --app malas-finance` — `GOOGLE_AI_API_KEY`,
-   `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`. Never the dashboard, never
-   the repo.
-5. **Add the `DENO_DEPLOY_TOKEN` repo secret** so the deploy workflow can push.
+4. **Set the three secrets** — `GOOGLE_AI_API_KEY`, `TELEGRAM_BOT_TOKEN`,
+   `TELEGRAM_WEBHOOK_SECRET` — via the app's "Environment Variables" in the
+   dashboard, or from a local `.env` (see `.env.example`) with
+   `deno deploy env load .env --app malas-finance`.
+5. **Point Telegram at the deploy** once it is live:
+   `curl "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook?url=https://malas-finance.lzif.deno.net/webhook&secret_token=<TELEGRAM_WEBHOOK_SECRET>"`
+   The `secret_token` MUST match `TELEGRAM_WEBHOOK_SECRET` or grammY 401s every
+   update.
 
 ### Architecture change from the original v3 design (2026-08-10)
 
