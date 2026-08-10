@@ -364,7 +364,12 @@ export async function handleMessage(text: string, chatId: number): Promise<strin
     }, apiKey)
   } catch (err) {
     console.error('parseMessage failed', err)
-    return '⚠️ Parser lagi ngadat. Coba kirim ulang sebentar lagi.'
+    // Reached only when every model failed AND no amount could be recovered
+    // from the text — so there is genuinely nothing to save. When an amount
+    // was present, parseMessage returns a deterministic parse instead and the
+    // transaction is still recorded (spec §15 #8).
+    return '⚠️ Parser lagi ngadat dan angkanya nggak kebaca. ' +
+      'Coba tulis ulang pakai nominal, mis. "kopi 18k".'
   }
 
   if (parsed.kind === 'clarify') {

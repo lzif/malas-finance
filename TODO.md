@@ -62,18 +62,39 @@ the seed categories. Destructive routes are POST-only and require `confirm=yes`,
 prefetch can fire them. `/logs` is an in-memory ring buffer (200 lines, per-isolate, empty after a
 cold start) with known secret values redacted; Deno Deploy's own logs remain the durable record.
 
-### ⚠️ Gemini free tier is 20 requests/day — the bot will stop parsing
+### ~~⚠️ Gemini free tier is 20 requests/day~~ — fixed 2026-08-10
 
-Hit for real while testing on 2026-08-10:
-`quotaId: GenerateRequestsPerDayPerProjectPerModel-FreeTier, quotaValue: 20` for `gemini-2.5-flash`.
-Every logged expense costs one request, so ~20 messages a day exhausts it and `parseMessage` then
-throws 429.
+Resolved by changing model and adding a fallback chain. Free-tier daily request budgets, read off
+the AI Studio rate-limit page:
 
-Today that means the reply is "Parser lagi ngadat" **and the expense is lost** — the worst possible
-failure for a tracker whose whole value is not losing them. This promotes the Gemma fallback (§15
-#8, item 4 below) from a nice-to-have to the next thing that matters, and it should probably also
-queue-and-retry rather than drop, or fall back to the deterministic `parseAmount` so at least the
-amount survives.
+| Model                                 | RPM | RPD        |
+| ------------------------------------- | --- | ---------- |
+| `gemini-2.5-flash` (old primary)      | 5   | **20**     |
+| `gemini-2.5-flash-lite`               | 10  | 20         |
+| `gemini-3-flash-preview`              | 5   | 20         |
+| `gemini-3.1-flash-lite` (new primary) | 15  | **500**    |
+| `gemma-4-26b-a4b-it` (fallback)       | 30  | **14,400** |
+
+The chain is ordered by quota, not capability — a smarter model that has run out parses nothing.
+`gemini-2.5-flash` was dropped entirely rather than kept as a fallback: a 20/day tier is a
+liability, not a safety net. Both chain models were verified to honour `responseSchema` and to apply
+the §7.2 hard rules on real Indonesian input.
+
+Behind both sits `offlineParse` — pure, no network. If every model fails and the text contains an
+amount, the transaction is **still recorded** (labelled `impulse`, the honest default when the "why"
+is unknown). Only a message with no recoverable amount now fails, and it says so specifically.
+Verified: with a deliberately invalid key, `kopi 18k` still saved as expense/Rp 18.000; `helm` threw
+the typed `ParserUnavailableError`.
+
+Note the TPM column can look alarming for a model the bot never calls — Gemma showing 236K tokens
+against a 16K/min cap came from AI Studio chat usage, where each turn resends the whole
+conversation. The bot's own footprint is ~620 tokens per message.
+
+How it surfaced, for the record: hit while testing on 2026-08-10 —
+`quotaId: GenerateRequestsPerDayPerProjectPerModel-FreeTier, quotaValue: 20`. Every logged expense
+costs one request, so ~20 messages exhausted the day and every later one 429'd. The old behaviour
+replied "Parser lagi ngadat" and **dropped the expense**, which is the worst available failure for a
+tracker whose whole value is not losing them.
 
 ### Weekly pay cycle (added 2026-08-10, from real use)
 
@@ -128,10 +149,10 @@ Concrete next steps, roughly in order:
    prompted for — as a non-blocking nudge while `allowanceToday` is 0, never a gate. `/start` and
    `/help` (`bot/commands.ts`) are deterministic, so they work with no API key. `started_at` is set
    automatically on the first transaction.
-4. **Fallback + retry** (spec §15 #8) — **now the top priority**, see the quota note above. Gemini's
-   free tier allows 20 requests/day; past that every message 429s and the expense is silently lost.
-   Needs a Gemma fallback, and ideally a deterministic `parseAmount` last resort so the amount
-   survives even when no model answers.
+4. ~~**Fallback + retry** (spec §15 #8)~~ — **done.** Model chain (`gemini-3.1-flash-lite` →
+   `gemma-4-26b-a4b-it`) ordered by free-tier quota, then a deterministic `offlineParse` last resort
+   so an expense is never lost to a quota wall. Non-retryable errors (bad key, malformed request)
+   stop the chain instead of burning it. See the quota section above.
 
 ### The day boundary now names its own timezone — fixed, no env var
 
