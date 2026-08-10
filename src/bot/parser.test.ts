@@ -1,6 +1,12 @@
 import { describe, it } from '@std/testing/bdd'
 import { expect } from '@std/expect'
-import { backfillAmount, enforceHardRules, type ParsedInput, parseMessage } from './parser.ts'
+import {
+  backfillAmount,
+  enforceHardRules,
+  offlineParse,
+  type ParsedInput,
+  parseMessage,
+} from './parser.ts'
 
 function expense(over: Partial<ParsedInput> = {}): ParsedInput {
   return {
@@ -81,6 +87,51 @@ const ctx = {
     'CASH',
   ],
 }
+
+describe('offlineParse — the quota-wall safety net (spec §15 #8)', () => {
+  it('salvages an expense when no model is available', () => {
+    const p = offlineParse('kopi 18k')!
+    expect(p).not.toBeNull()
+    expect(p.kind).toBe('expense')
+    expect(p.amount).toBe(18_000)
+    expect(p.item).toBe('kopi')
+  })
+
+  it('labels salvaged spending impulse, not routine', () => {
+    // It cannot know the "why", and quietly filing unexamined spending as
+    // routine is the exact self-reporting bias the pivot exists to remove.
+    expect(offlineParse('makan siang 25rb')!.intent).toBe('impulse')
+  })
+
+  it('still enforces the §7.2 hard rules', () => {
+    expect(offlineParse('rokok surya 27.5k')!.intent).toBe('impulse')
+  })
+
+  it('recognises income from a leading + and from keywords', () => {
+    const plus = offlineParse('+300k')!
+    expect(plus.kind).toBe('income')
+    expect(plus.amount).toBe(300_000)
+    // Income has no intent — the repo layer rejects a non-null one.
+    expect(plus.intent).toBeNull()
+
+    expect(offlineParse('gajian 700k')!.kind).toBe('income')
+  })
+
+  it('falls back to a generic label when only an amount is present', () => {
+    expect(offlineParse('25rb')!.item).toBe('Pengeluaran')
+    expect(offlineParse('+700k')!.item).toBe('Pemasukan')
+  })
+
+  it('returns null when there is no amount to salvage', () => {
+    // Nothing to record — the caller should ask rather than invent a number.
+    expect(offlineParse('helm')).toBeNull()
+    expect(offlineParse('halo bot')).toBeNull()
+  })
+
+  it('handles the dotted-grouping form', () => {
+    expect(offlineParse('bensin 50.000')!.amount).toBe(50_000)
+  })
+})
 
 describe('parseMessage (live Gemini)', () => {
   it({

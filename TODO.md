@@ -36,6 +36,79 @@ Postgres.
    `curl "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook?url=https://malas-finance.lzif.deno.net/webhook&secret_token=<TELEGRAM_WEBHOOK_SECRET>"`
    The `secret_token` MUST match `TELEGRAM_WEBHOOK_SECRET` or grammY 401s every update.
 
+### Admin endpoints (added 2026-08-10)
+
+Maintenance over HTTPS, because the built-in Postgres is TCP `:5432` and many sandboxes block
+outbound TCP — an authenticated HTTP route is the only way to inspect or clean the live database
+from outside the dashboard.
+
+Auth: `x-admin-secret` header must equal `TELEGRAM_WEBHOOK_SECRET`. Fails closed (503 when no secret
+is configured). Reusing the webhook secret is a deliberate single-user trade — a leak now also
+permits a wipe; giving admin its own env var is a one-function change (`adminSecret()` in
+`admin/routes.ts`).
+
+```
+S='<TELEGRAM_WEBHOOK_SECRET>'; B=https://malas-finance.lzif.deno.net/admin
+curl -H "x-admin-secret: $S" $B/health          # liveness, DB reachable, which env vars are set
+curl -H "x-admin-secret: $S" "$B/db?recent=20"  # settings, wallet balances, counts, recent tx
+curl -H "x-admin-secret: $S" "$B/logs?limit=100"
+curl -X POST -H "x-admin-secret: $S" "$B/db/clear?confirm=yes&scope=transactions"
+curl -X POST -H "x-admin-secret: $S" "$B/db/clear?confirm=yes&scope=all"
+```
+
+`scope=transactions` empties the ledger and keeps wallets/settings; `scope=all` is a factory reset
+(also wallets, custom categories, settings back to defaults, Telegram chat claim released) but keeps
+the seed categories. Destructive routes are POST-only and require `confirm=yes`, so no link or
+prefetch can fire them. `/logs` is an in-memory ring buffer (200 lines, per-isolate, empty after a
+cold start) with known secret values redacted; Deno Deploy's own logs remain the durable record.
+
+### ~~⚠️ Gemini free tier is 20 requests/day~~ — fixed 2026-08-10
+
+Resolved by changing model and adding a fallback chain. Free-tier daily request budgets, read off
+the AI Studio rate-limit page:
+
+| Model                                 | RPM | RPD        |
+| ------------------------------------- | --- | ---------- |
+| `gemini-2.5-flash` (old primary)      | 5   | **20**     |
+| `gemini-2.5-flash-lite`               | 10  | 20         |
+| `gemini-3-flash-preview`              | 5   | 20         |
+| `gemini-3.1-flash-lite` (new primary) | 15  | **500**    |
+| `gemma-4-26b-a4b-it` (fallback)       | 30  | **14,400** |
+
+The chain is ordered by quota, not capability — a smarter model that has run out parses nothing.
+`gemini-2.5-flash` was dropped entirely rather than kept as a fallback: a 20/day tier is a
+liability, not a safety net. Both chain models were verified to honour `responseSchema` and to apply
+the §7.2 hard rules on real Indonesian input.
+
+Behind both sits `offlineParse` — pure, no network. If every model fails and the text contains an
+amount, the transaction is **still recorded** (labelled `impulse`, the honest default when the "why"
+is unknown). Only a message with no recoverable amount now fails, and it says so specifically.
+Verified: with a deliberately invalid key, `kopi 18k` still saved as expense/Rp 18.000; `helm` threw
+the typed `ParserUnavailableError`.
+
+Note the TPM column can look alarming for a model the bot never calls — Gemma showing 236K tokens
+against a 16K/min cap came from AI Studio chat usage, where each turn resends the whole
+conversation. The bot's own footprint is ~620 tokens per message.
+
+How it surfaced, for the record: hit while testing on 2026-08-10 —
+`quotaId: GenerateRequestsPerDayPerProjectPerModel-FreeTier, quotaValue: 20`. Every logged expense
+costs one request, so ~20 messages exhausted the day and every later one 429'd. The old behaviour
+replied "Parser lagi ngadat" and **dropped the expense**, which is the worst available failure for a
+tracker whose whole value is not losing them.
+
+### Weekly pay cycle (added 2026-08-10, from real use)
+
+The owner is paid **borongan, every Saturday, a different amount each week**. The spec had no cycle
+for that — only monthly, manual, and rolling-30 — and the consequence was not cosmetic: under
+`monthly-day`, a week's pay is divided across the rest of the month, so the daily allowance read
+**Rp 29.166 instead of Rp 100.000** on a Rp 700k week. Wrong in the _stingy_ direction, which is
+easy to miss because an under-spending nudge feels like discipline rather than a bug.
+
+`domain/cycle.ts` gained a `weekly` mode (`cycleAnchorDay` = weekday, 0=Sun..6=Sat) with
+`dayOfWeek`/`nextWeekday` helpers in `day.ts`. Set it by chatting: `gajian tiap sabtu`. Verified
+live end to end — Monday 2026-08-10, cycle Sat 08-08→Fri 08-14, 5 days left, Rp 700k → **Rp
+140.000/day**, reconciled by hand.
+
 ### Architecture change from the original v3 design (2026-08-10)
 
 The stack moved off the Deploy-Classic-era choices, because Classic shut down 2026-07-20 and the new
@@ -70,11 +143,16 @@ Concrete next steps, roughly in order:
    All four messages matched **existing seed categories** — zero new categories created, which is
    the match-first rule (§5.3) actually holding under a live model rather than in a unit test. Test
    rows were removed afterwards; the DB is back to a clean slate.
-3. **Onboarding** (spec §13): the three-question first-run flow, persisting to `settings` + creating
-   the CASH wallet. Today a fresh install silently gets a `CASH` wallet at Rp 0 and claims the first
-   `chat_id` that talks to it — workable, but not the intended first-run experience.
-4. **Fallback + retry** (spec §15 #8): Gemma fallback when Gemini errors/rate-limits. Right now a
-   Gemini outage returns "Parser lagi ngadat" and the message is lost.
+3. ~~**Onboarding**~~ — **done**, but not as spec'd. Real use showed two of the three questions
+   should not be asked at all (spec §13 is rewritten to match): daily spend is _learned_ by
+   `runway.ts`, and payday is set by chatting whenever the user knows it. Only spendable balance is
+   prompted for — as a non-blocking nudge while `allowanceToday` is 0, never a gate. `/start` and
+   `/help` (`bot/commands.ts`) are deterministic, so they work with no API key. `started_at` is set
+   automatically on the first transaction.
+4. ~~**Fallback + retry** (spec §15 #8)~~ — **done.** Model chain (`gemini-3.1-flash-lite` →
+   `gemma-4-26b-a4b-it`) ordered by free-tier quota, then a deterministic `offlineParse` last resort
+   so an expense is never lost to a quota wall. Non-retryable errors (bad key, malformed request)
+   stop the chain instead of burning it. See the quota section above.
 
 ### The day boundary now names its own timezone — fixed, no env var
 

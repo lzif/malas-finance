@@ -90,6 +90,28 @@ export function addDays(dayKey: string, delta: number): string {
   return formatDayKey(shifted.getUTCFullYear(), shifted.getUTCMonth() + 1, shifted.getUTCDate())
 }
 
+/**
+ * Day of week for a dayKey: 0 = Sunday … 6 = Saturday, matching
+ * `Date.prototype.getUTCDay`.
+ *
+ * Computed from the dayKey's own calendar fields (via UTC), never from the
+ * process clock — a dayKey already *is* a local calendar day, so reinterpreting
+ * it in another zone would be the timezone bug this module exists to avoid.
+ */
+export function dayOfWeek(dayKey: string): number {
+  const { year, month, day } = parseDayKey(dayKey)
+  return new Date(Date.UTC(year, month - 1, day)).getUTCDay()
+}
+
+/**
+ * The next occurrence of `weekday` (0=Sun..6=Sat) strictly after `dayKey`.
+ * Always 1..7 days ahead, so on the anchor day itself it returns next week's.
+ */
+export function nextWeekday(dayKey: string, weekday: number): string {
+  const delta = ((weekday - dayOfWeek(dayKey) + 7) % 7) || 7
+  return addDays(dayKey, delta)
+}
+
 /** All dayKeys from `start` to `end`, inclusive of both ends. */
 export function dayRange(start: string, end: string): string[] {
   const n = daysBetween(end, start)

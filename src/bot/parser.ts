@@ -98,7 +98,8 @@ Aturan kategori (spec §5.3): cocokkan ke kategori yang sudah ada dulu, jangan b
 
 Kind:
 - expense: pengeluaran biasa (default).
-- income: ada tanda "+" atau kata pemasukan/gajian.
+- income: ada tanda "+" atau kata pemasukan/gajian/saldo. "+saldo 500k" artinya
+  user melaporkan duit yang dia punya sekarang — itu income, item "Saldo awal".
 - transfer: "pindah ... ke ...".
 - commitment: "pertanggal", "tiap tanggal", "setiap bulan", "nabung ... tanggal".
 - clarify: kalau amount tidak jelas, ATAU intent benar-benar ambigu (mis. "helm 350k" bisa planned/impulse), ATAU wallet ambigu padahal ada >1 wallet. Isi "question" dalam bahasa Indonesia yang singkat.
@@ -128,24 +129,39 @@ const RESPONSE_SCHEMA = {
   required: ['kind', 'item'],
 }
 
-const MODEL = 'gemini-2.5-flash'
-const ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`
-
 /**
- * parseMessage — call Gemini and return a structured, hard-rule-corrected
- * ParsedInput. Throws on transport/parse failure so the caller can fall back
- * to Gemma or a retry queue (spec §15 #8).
+ * The model chain, tried in order (spec §15 #8). Ordered by free-tier daily
+ * request budget, not by raw capability, because a smarter model that has run
+ * out of quota parses nothing:
+ *
+ *   gemini-3.1-flash-lite   500 requests/day, 15/min
+ *   gemma-4-26b-a4b-it   14,400 requests/day, 30/min
+ *
+ * The previous primary, gemini-2.5-flash, allows only **20 requests/day** —
+ * about a day of ordinary logging before every message fails. It is not in the
+ * chain at all: a tier that small is a liability, not a fallback. Both models
+ * here were verified to honour `responseSchema` and to apply the §7.2 hard
+ * rules correctly on real Indonesian input.
  */
-export async function parseMessage(
-  text: string,
-  ctx: ParserContext,
+const MODELS = ['gemini-3.1-flash-lite', 'gemma-4-26b-a4b-it'] as const
+
+function endpointFor(model: string): string {
+  return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`
+}
+
+/** True for failures where trying the next model is worth it. */
+function isRetryable(status: number): boolean {
+  // 429 = quota/rate limit, 5xx = transient upstream. A 400/403 means the
+  // request or key is wrong, and would fail identically on every model.
+  return status === 429 || status >= 500
+}
+
+async function callModel(
+  model: string,
+  userPrompt: string,
   apiKey: string,
 ): Promise<ParsedInput> {
-  const userPrompt = `Wallet yang ada: ${ctx.wallets.join(', ') || '(hanya CASH)'}\n` +
-    `Kategori yang ada: ${ctx.categories.join(', ')}\n\n` +
-    `Pesan user: ${text}`
-
-  const res = await fetch(`${ENDPOINT}?key=${apiKey}`, {
+  const res = await fetch(`${endpointFor(model)}?key=${apiKey}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
@@ -160,17 +176,22 @@ export async function parseMessage(
   })
 
   if (!res.ok) {
-    throw new Error(`Gemini ${res.status}: ${await res.text()}`)
+    const body = await res.text()
+    const err = new Error(`${model} ${res.status}: ${body.slice(0, 300)}`) as Error & {
+      status?: number
+    }
+    err.status = res.status
+    throw err
   }
 
   const data = await res.json()
   const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text
   if (typeof raw !== 'string') {
-    throw new Error(`Gemini returned no text: ${JSON.stringify(data).slice(0, 300)}`)
+    throw new Error(`${model} returned no text: ${JSON.stringify(data).slice(0, 300)}`)
   }
 
   const obj = JSON.parse(raw)
-  const parsed: ParsedInput = {
+  return {
     kind: obj.kind,
     amount: obj.amount ?? null,
     item: obj.item ?? '',
@@ -182,6 +203,84 @@ export async function parseMessage(
     notes: obj.notes ?? null,
     question: obj.question ?? null,
   }
+}
 
-  return backfillAmount(enforceHardRules(parsed), text)
+/**
+ * Last resort when no model answers — pure, no network (spec §6.2).
+ *
+ * The point is that an expense is never silently lost to a quota wall. It
+ * cannot know the "why", so it deliberately labels the intent `impulse`: the
+ * unflattering default, consistent with FALLBACK_INTENT in bot/webhook.ts, and
+ * the honest choice when the alternative is quietly filing unexamined spending
+ * as routine (spec §1, K2).
+ *
+ * Returns null when there is no amount to salvage — then a clarify is right.
+ */
+export function offlineParse(text: string): ParsedInput | null {
+  const amount = parseAmount(text)
+  if (amount === null) return null
+
+  // Strip the amount token so the leftover words read as the item label.
+  const item = text
+    .replace(/[+-]?\s*\d[\d.,]*\s*(k|rb|ribu|jt|juta|m)?\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  const isIncome = /^\s*\+/.test(text) || /\b(gajian|gaji|masuk|terima|bonus|thr)\b/i.test(text)
+
+  return enforceHardRules({
+    kind: isIncome ? 'income' : 'expense',
+    amount,
+    item: item || (isIncome ? 'Pemasukan' : 'Pengeluaran'),
+    intent: isIncome ? null : 'impulse',
+    category: null,
+    subcategory: null,
+    wallet: null,
+    dueDay: null,
+    notes: null,
+    question: null,
+  })
+}
+
+/** Thrown when every model failed AND the text carried no recoverable amount. */
+export class ParserUnavailableError extends Error {}
+
+/**
+ * parseMessage — walk the model chain, then fall back to deterministic parsing
+ * rather than losing the transaction (spec §15 #8).
+ *
+ * Throws ParserUnavailableError only when no model answered and there was no
+ * amount to salvage, so the caller can say something useful.
+ */
+export async function parseMessage(
+  text: string,
+  ctx: ParserContext,
+  apiKey: string,
+): Promise<ParsedInput> {
+  const userPrompt = `Wallet yang ada: ${ctx.wallets.join(', ') || '(hanya CASH)'}\n` +
+    `Kategori yang ada: ${ctx.categories.join(', ')}\n\n` +
+    `Pesan user: ${text}`
+
+  let lastError: unknown
+  for (const model of MODELS) {
+    try {
+      const parsed = await callModel(model, userPrompt, apiKey)
+      return backfillAmount(enforceHardRules(parsed), text)
+    } catch (err) {
+      lastError = err
+      const status = (err as { status?: number }).status
+      // A non-retryable HTTP error (bad key, malformed request) will fail the
+      // same way on every model — stop rather than burn the rest of the chain.
+      if (typeof status === 'number' && !isRetryable(status)) break
+      console.warn(`parser: ${model} failed, trying next`, String(err).slice(0, 200))
+    }
+  }
+
+  const salvaged = offlineParse(text)
+  if (salvaged) {
+    console.warn('parser: all models failed, used deterministic fallback')
+    return salvaged
+  }
+
+  throw new ParserUnavailableError(String(lastError).slice(0, 300))
 }
