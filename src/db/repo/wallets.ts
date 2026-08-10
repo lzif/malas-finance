@@ -1,4 +1,5 @@
 import { getSql } from '../connection.ts'
+import { toIso } from '../rows.ts'
 
 type Row = Record<string, unknown>
 
@@ -20,7 +21,7 @@ function rowToWallet(row: Record<string, unknown>): Wallet {
     initialBalance: row.initial_balance as number,
     archived: row.archived as boolean,
     order: Number(row.order),
-    createdAt: String(row.created_at),
+    createdAt: toIso(row.created_at),
   }
 }
 

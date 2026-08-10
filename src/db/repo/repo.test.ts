@@ -19,6 +19,12 @@ afterAll(async () => {
       await fn()
     } catch { /* best-effort */ }
   }
+  // Close the TCP pool postgres.js opened, or Deno's resource sanitizer fails
+  // the run. No-op when no test connected (DATABASE_URL absent).
+  if (HAS_DB) {
+    const { closeSql } = await import('../connection.ts')
+    await closeSql()
+  }
 })
 
 describe('settings repo', () => {
@@ -189,6 +195,9 @@ describe('transactions repo', () => {
       expect(tx.kind).toBe('out')
       expect(tx.amount).toBe(27_500)
       expect(tx.dayKey).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+      // Timestamp reads are canonical ISO 8601, not the driver's Date.toString()
+      // (postgres.js returns timestamptz as a JS Date — see db/rows.ts).
+      expect(tx.at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
 
       let bal = await walletBalance(w.id)
       expect(bal).toBe(72_500)

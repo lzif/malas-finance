@@ -1,4 +1,5 @@
 import { getSql } from '../connection.ts'
+import { toIso, toIsoOrNull } from '../rows.ts'
 import { dayKeyOf } from '../../domain/day.ts'
 import type { Intent, Kind } from '../../domain/types.ts'
 
@@ -32,11 +33,11 @@ function rowToTransaction(row: Record<string, unknown>): Transaction {
     walletId: row.wallet_id as string,
     toWalletId: (row.to_wallet_id as string) ?? null,
     commitmentId: (row.commitment_id as string) ?? null,
-    at: String(row.at),
+    at: toIso(row.at),
     dayKey: row.day_key as string,
-    createdAt: String(row.created_at),
-    updatedAt: String(row.updated_at),
-    deletedAt: row.deleted_at != null ? String(row.deleted_at) : null,
+    createdAt: toIso(row.created_at),
+    updatedAt: toIso(row.updated_at),
+    deletedAt: toIsoOrNull(row.deleted_at),
   }
 }
 

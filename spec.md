@@ -75,8 +75,9 @@ Nightly summaries, weekly audits, commitment reminders. The bot initiates conver
 | Component | Choice | Rationale |
 |---|---|---|
 | Runtime | Deno Deploy (free tier) | Zero-config deployment, no build step |
-| Database | PostgreSQL (Neon), via the serverless HTTP driver (`@neondatabase/serverless`) | Durable, relational, no eviction risk. The HTTP driver is required, not a preference: Deno Deploy (and this build environment) only allow outbound HTTPS, so a raw TCP client on :5432 hangs. Each query is a stateless HTTPS round trip, which fits the per-webhook request/response model |
-| Bot framework | Telegram Bot API via webhook | No polling, no long-running process needed |
+| Database | Deno Deploy built-in Postgres, via `postgres` (postgres.js, a standard TCP client) | Durable, relational, no eviction risk. Originally Neon over the serverless HTTP driver, because Deploy Classic only allowed outbound HTTPS. The new Deploy runtime allows TCP and ships a built-in Postgres that injects `DATABASE_URL`, so a normal client is simpler — one fewer external service, connection string provided by the platform. postgres.js keeps the tagged-template query API, so the swap did not touch the repo layer |
+| Bot framework | grammY (`npm:grammy`) over webhook | Deno-native; its `webhookCallback` handles the secret-token check and update routing, and its conversations/keyboards fit the §13 onboarding and Phase-3 edit-via-reply flows. No polling, no long-running process |
+| HTTP routing | Hono (`jsr:@hono/hono`) | Routes `/` and `/webhook`; grammY owns the webhook handler. Room for the Phase-4 read-only WebApp to add static serving + a read API without re-plumbing |
 | AI SDK | Google AI Studio Gemini REST directly (JSON mode) for now; Vercel AI SDK is a tracked refinement | The prompt, response schema, and post-processing carry the product logic and are transport-independent; a verified working parser over plain REST beats an unverified SDK integration. See §15 #2 |
 | LLM (primary) | Gemini Flash via Google AI Studio | Free tier, fast, good at structured extraction |
 | LLM (fallback) | Gemma via Google AI Studio | Free tier, sufficient for simple parsing tasks |
@@ -285,7 +286,7 @@ src/
   db/
     schema.sql         ← authoritative DDL
     seed.sql           ← seed categories + singleton settings row (idempotent, verified)
-    connection.ts      ← Neon serverless HTTP connection    (done)
+    connection.ts      ← Postgres pool (postgres.js, built-in DB)  (done)
     migrate.ts         ← applies schema.sql + seed.sql      (done; `deno task db:migrate`)
     sql.ts             ← pure SQL text helpers (statement split)  (done, tested)
     repo/              ← repository layer, the only write path (Phase 1, next)
@@ -299,7 +300,7 @@ src/
     nightly.ts  weekly.ts   ← cron jobs                    (Phase 3)
   web/
     app.ts  static/    ← Telegram WebApp dashboard         (Phase 4)
-  main.ts              ← Deno Deploy entry point (fetch handler); walking skeleton
+  main.ts              ← Deno Deploy entry point (Hono + grammY webhook)  (done)
 ```
 
 ### 11.1 Domain layer isolation (unchanged from v2)
