@@ -2,22 +2,58 @@
 
 `spec.md` says where this is going. This file says where it actually is.
 
-Last updated: 2026-08-09
+Last updated: 2026-08-10
 
 ## Pick up here
 
-**The bot works end to end.** A Telegram message now goes all the way through:
-AI parse → route → repository write → allowance recompute → formatted reply.
-Verified against live Neon + live Gemini (see below). What is left is the
-surrounding experience, not the core loop.
+**The bot works end to end, now on the new Deno Deploy stack.** A Telegram
+message goes all the way through: AI parse → route → repository write →
+allowance recompute → formatted reply. What is left is the surrounding
+experience, not the core loop.
+
+### Deployment setup the owner must do once (in console.deno.com)
+
+1. **Create the app** named `malas-finance` (the deploy workflow passes
+   `--app malas-finance`; change both if you name it differently).
+2. **Provision the built-in Postgres** for the app. It injects `DATABASE_URL`
+   automatically — no dashboard env entry for it.
+3. **Run the migration** against that DB once: set `DATABASE_URL` locally to the
+   built-in DB's connection string and `deno task db:migrate` (applies
+   `schema.sql` + `seed.sql`, idempotent).
+4. **Load the three secrets** from a local `.env` (see `.env.example`):
+   `deno deploy env load .env --app malas-finance` — `GOOGLE_AI_API_KEY`,
+   `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`. Never the dashboard, never
+   the repo.
+5. **Add the `DENO_DEPLOY_TOKEN` repo secret** so the deploy workflow can push.
+
+### Architecture change from the original v3 design (2026-08-10)
+
+The stack moved off the Deploy-Classic-era choices, because Classic shut down
+2026-07-20 and the new runtime lifts the constraints that drove them:
+
+- **Database: Neon HTTP driver → built-in Postgres via postgres.js (TCP).**
+  Classic was HTTPS-only, which is why Neon's HTTP driver was mandatory. The
+  new runtime allows TCP and ships a built-in Postgres. postgres.js keeps the
+  tagged-template query API, so `connection.ts` and `migrate.ts` changed but
+  the four repo modules did not. **Verified**: all 19 integration steps pass
+  over real TCP against a local Postgres 16 (the sandbox blocks outbound
+  :5432, so a local instance stood in for the built-in DB — same wire
+  protocol).
+- **Transport: hand-rolled webhook → grammY; routing → Hono.** grammY's
+  `webhookCallback` does the secret-token check (fails closed when the secret
+  is unset) and update routing; Hono owns `/` and `/webhook`. **Verified**
+  end to end: Hono routes, grammY 401s a wrong secret and 200s a valid one,
+  and a valid update ran the real `handleMessage` → live Gemini → local
+  Postgres → reply (`rokok surya 27.5k` → `[IMPULSIF]`, `Rokok & Sejenisnya`).
 
 Concrete next steps, roughly in order:
 
 1. ~~**`src/db/repo/*.ts`**~~ — **done.** Settings, wallets, transactions,
-   categories — all verified against real Neon (19 integration tests). Lazy
-   `getSql()` in `connection.ts` so permissionless `deno test` stays green.
+   categories — the 19 integration steps now pass over TCP (postgres.js) as
+   well as they did on Neon-HTTP. Lazy `getSql()` in `connection.ts` so
+   permissionless `deno test` stays green.
 2. ~~**Wire the real flow**~~ — **done**, in `src/bot/webhook.ts`. `main.ts` is
-   now transport only. Live smoke against real Neon + Gemini:
+   now transport only (Hono + grammY). Live smoke against Gemini:
    - `rokok surya 27.5k abis lembur` → `💾 rokok surya — Rp 27.500 [IMPULSIF] / 📁 Rokok & Sejenisnya`
    - `+gajian 2.4jt` → income to CASH, allowance jumps to Rp 104.347
    - `makan siang 25rb` → `[RUTIN]`, `📁 Makanan & Minuman`
@@ -112,12 +148,12 @@ a month".
 | `bot/formatter.ts` — pure reply formatting (§6, §8) | started — expense/income/transfer + anchor line, tested. Nightly/weekly/ask formatting still to come |
 | PostgreSQL schema (`db/schema.sql`) | done — matches spec §5.1 |
 | Seed data (`db/seed.sql`) — seed categories + settings row | done — idempotent, **verified against real Neon** (two migrate runs stay 11 top / 30 sub / 0 dupes) |
-| `db/connection.ts` (Neon serverless HTTP driver) | done — connects to Neon PG 17 over HTTPS; raw TCP is blocked on Deno Deploy so the HTTP driver is required, not optional |
+| `db/connection.ts` (Postgres pool) | done — postgres.js (TCP) against the built-in DB; was Neon-HTTP until Deploy Classic's HTTPS-only limit was lifted (2026-07-20). Tagged-template API preserved, so the repo layer was untouched |
 | `db/migrate.ts` + `db/sql.ts` (idempotent migration runner) | done — `deno task db:migrate`; `splitStatements` unit-tested (a live run caught a comment-semicolon split bug, now pinned) |
 | `bot/parser.ts` (AI parser, Gemini) | done — **verified against live Gemini**: rokok→impulse, makan siang→routine, +gajian→income. Hard rules (§7.2) enforced in code, not left to the model |
-| `main.ts` webhook entry | done — transport only: routes, verifies the secret, delegates to `bot/webhook.ts`, sends the reply |
-| `db/repo/*` with integrity rules (§5.2) | done — settings, wallets, transactions, categories; **verified against real Neon** (19 integration tests); lazy `getSql()` so permissionless `deno test` stays green |
-| Real expense/income/transfer flow (parser → repo → allowance → reply) | done — `bot/webhook.ts`; **verified live** (Neon + Gemini) across expense/income/transfer/clarify + the single-user guard |
+| `main.ts` webhook entry | done — Hono routing + grammY `webhookCallback` (secret check, fails closed); delegates to `bot/webhook.ts` |
+| `db/repo/*` with integrity rules (§5.2) | done — settings, wallets, transactions, categories; **19 integration steps verified over real TCP** (postgres.js, local PG 16); lazy `getSql()` so permissionless `deno test` stays green |
+| Real expense/income/transfer flow (parser → repo → allowance → reply) | done — `bot/webhook.ts`; **verified live** (Gemini + Postgres) across expense/income/transfer/clarify + the single-user guard |
 | Onboarding (§13) | not started |
 
 ## Phase 2 — Commitments (spec §16)

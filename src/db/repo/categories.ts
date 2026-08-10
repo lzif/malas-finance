@@ -61,20 +61,21 @@ export async function findCategory(
   if (parents.length === 0) return null
 
   const parent = parents[0]
+  const parentId = parent.id as string
   if (!subcategoryName) {
-    return { categoryId: parent.id as string, subcategoryId: null, path: parent.name as string }
+    return { categoryId: parentId, subcategoryId: null, path: parent.name as string }
   }
 
   const children = await sql`
     SELECT id, name FROM categories
-    WHERE parent_id = ${parent.id} AND LOWER(name) = LOWER(${subcategoryName})
+    WHERE parent_id = ${parentId} AND LOWER(name) = LOWER(${subcategoryName})
   ` as Row[]
   if (children.length === 0) {
-    return { categoryId: parent.id as string, subcategoryId: null, path: parent.name as string }
+    return { categoryId: parentId, subcategoryId: null, path: parent.name as string }
   }
 
   return {
-    categoryId: parent.id as string,
+    categoryId: parentId,
     subcategoryId: children[0].id as string,
     path: `${parent.name} > ${children[0].name}`,
   }

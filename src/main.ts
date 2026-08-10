@@ -1,99 +1,85 @@
-// main.ts — Deno Deploy entry point (spec §11). HTTP transport only: route,
-// verify Telegram's shared secret, hand the text to bot/webhook.ts, send the
-// reply back. All product logic lives behind `handleMessage`.
+// main.ts — Deno Deploy entry point (spec §11). HTTP transport only: Hono
+// routes the request, grammY owns the Telegram webhook, and all product logic
+// lives behind `handleMessage`. This file holds no domain math and no SQL.
 //
-// Env (Deno Deploy dashboard):
+// Env (Deno Deploy dashboard, or `deno deploy env`):
 //   TELEGRAM_BOT_TOKEN        — from @BotFather
-//   TELEGRAM_WEBHOOK_SECRET   — the secret_token set on setWebhook; Telegram
-//                               echoes it in X-Telegram-Bot-Api-Secret-Token
-//   DATABASE_URL              — PostgreSQL connection string
+//   TELEGRAM_WEBHOOK_SECRET   — the secret_token set on setWebhook; grammY
+//                               checks it against X-Telegram-Bot-Api-Secret-Token
+//   DATABASE_URL              — Postgres connection string. Injected automatically
+//                               by the Deno Deploy built-in database.
 //   GOOGLE_AI_API_KEY         — Gemini/Gemma via Google AI Studio
 //
 // No TZ setting is required: the calendar day is computed against an
 // explicitly named zone (domain/day.ts, APP_TIME_ZONE), not the process's.
 
+import { Hono } from '@hono/hono'
+import { Bot, webhookCallback } from 'grammy'
 import { handleMessage } from './bot/webhook.ts'
 
 const BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN') ?? ''
 const WEBHOOK_SECRET = Deno.env.get('TELEGRAM_WEBHOOK_SECRET') ?? ''
 
-/** Minimal shape of the Telegram update fields this skeleton reads. */
-interface TelegramUpdate {
-  message?: {
-    chat: { id: number }
-    text?: string
-  }
-}
+type WebhookHandler = (req: Request) => Promise<Response>
 
-async function sendMessage(chatId: number, text: string): Promise<void> {
-  if (!BOT_TOKEN) {
-    console.warn('TELEGRAM_BOT_TOKEN not set — skipping sendMessage')
-    return
+/**
+ * Build the /webhook handler, or return null to leave it disabled.
+ *
+ * Fails CLOSED: the webhook is wired only when BOTH the bot token and the
+ * shared secret are present. grammY skips the secret check entirely when no
+ * secretToken is passed, so serving the route without a configured secret
+ * would be an unauthenticated write endpoint — the first stranger to POST
+ * would claim the ledger (spec §15 #5). Missing either, the route 403s.
+ */
+function buildWebhook(): WebhookHandler | null {
+  const missing = [
+    !BOT_TOKEN && 'TELEGRAM_BOT_TOKEN',
+    !WEBHOOK_SECRET && 'TELEGRAM_WEBHOOK_SECRET',
+  ].filter(Boolean)
+  if (missing.length > 0) {
+    console.error(`Webhook disabled — ${missing.join(' and ')} not set`)
+    return null
   }
-  const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text }),
+
+  const bot = new Bot(BOT_TOKEN)
+
+  bot.on('message:text', async (ctx) => {
+    const reply = await handleMessage(ctx.message.text, ctx.chat.id)
+    await ctx.reply(reply)
   })
-  if (!res.ok) {
-    console.error('sendMessage failed', res.status, await res.text())
-  }
-}
 
-async function handleWebhook(req: Request): Promise<Response> {
-  // Verify the shared secret Telegram echoes back (spec §15 #5). This header
-  // is the entire security model, so it fails CLOSED: an unset secret used to
-  // skip the check, which was harmless when the handler only echoed text but
-  // is not now that it writes to the ledger and spends Gemini calls. With the
-  // check skipped, the first stranger to POST here would claim
-  // settings.telegram_chat_id and lock the owner out of their own bot, with no
-  // reset path outside direct database access.
-  if (!WEBHOOK_SECRET) {
-    console.error('TELEGRAM_WEBHOOK_SECRET is not set — refusing all webhook requests')
-    return new Response('forbidden', { status: 403 })
-  }
-  if (req.headers.get('x-telegram-bot-api-secret-token') !== WEBHOOK_SECRET) {
-    return new Response('forbidden', { status: 403 })
-  }
+  // Keep a handler error from becoming a 500, which would make Telegram retry
+  // the same update indefinitely. handleMessage already turns its own failures
+  // into replies; this covers a failing ctx.reply (e.g. a Telegram API blip).
+  bot.catch((err) => console.error('grammy handler error', err))
 
-  let update: TelegramUpdate
-  try {
-    update = await req.json()
-  } catch {
-    return new Response('bad request', { status: 400 })
-  }
+  const callback = webhookCallback(bot, 'std/http', { secretToken: WEBHOOK_SECRET })
 
-  const message = update.message
-  if (message?.text) {
-    // handleMessage turns its own failures into replies; this catch only
-    // covers the unexpected, so one bad update never leaves Telegram retrying
-    // the same message forever.
-    let reply: string
-    try {
-      reply = await handleMessage(message.text, message.chat.id)
-    } catch (err) {
-      console.error('handleMessage threw', err)
-      reply = '⚠️ Ada error tak terduga. Coba lagi.'
+  // Initialize on first request, not at import: constructing the bot is free,
+  // but bot.init() calls getMe over the network. Doing it lazily keeps this
+  // module import-safe (no network side effect for tests or tooling) and costs
+  // one getMe per isolate.
+  let inited = false
+  return async (req: Request): Promise<Response> => {
+    if (!inited) {
+      await bot.init()
+      inited = true
     }
-    await sendMessage(message.chat.id, reply)
+    return await callback(req)
   }
-
-  // Telegram only needs a 200 to consider the update delivered.
-  return new Response('ok')
 }
 
-export function handler(req: Request): Promise<Response> | Response {
-  const url = new URL(req.url)
+const webhook = buildWebhook()
 
-  if (req.method === 'GET' && url.pathname === '/') {
-    return new Response('MalasFinance v3 bot — ok')
-  }
-  if (req.method === 'POST' && url.pathname === '/webhook') {
-    return handleWebhook(req)
-  }
-  return new Response('not found', { status: 404 })
-}
+const app = new Hono()
+
+app.get('/', (c) => c.text('MalasFinance v3 bot — ok'))
+
+app.post('/webhook', (c) => {
+  if (!webhook) return c.text('forbidden', 403)
+  return webhook(c.req.raw)
+})
 
 // Deno Deploy (and `deno serve` locally, via the deno.json tasks) invokes the
-// default export's fetch handler.
-export default { fetch: handler }
+// default export's fetch handler; a Hono app is `{ fetch }`-shaped.
+export default app

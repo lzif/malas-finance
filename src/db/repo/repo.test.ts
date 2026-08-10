@@ -19,6 +19,12 @@ afterAll(async () => {
       await fn()
     } catch { /* best-effort */ }
   }
+  // Close the TCP pool postgres.js opened, or Deno's resource sanitizer fails
+  // the run. No-op when no test connected (DATABASE_URL absent).
+  if (HAS_DB) {
+    const { closeSql } = await import('../connection.ts')
+    await closeSql()
+  }
 })
 
 describe('settings repo', () => {

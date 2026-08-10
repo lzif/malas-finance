@@ -1,30 +1,46 @@
 // db/connection.ts — the single PostgreSQL connection for the whole app.
 //
-// Uses Neon's serverless HTTP driver, not a raw TCP client. Two reasons this
-// is the right choice and not a compromise:
-//   1. Deno Deploy and comparable serverless/proxied environments only allow
-//      outbound HTTPS — a raw Postgres TCP socket on :5432 simply hangs. The
-//      HTTP driver tunnels each query over fetch, so it works where TCP can't.
-//   2. Each webhook invocation is a short request/response with no long-lived
-//      process to own a connection pool — a stateless per-query HTTP round trip
-//      fits that model exactly.
+// Uses postgres.js (a standard TCP client), not an HTTP driver. This is a
+// change from the original design: v3 targeted Neon's serverless HTTP driver
+// because Deploy Classic only allowed outbound HTTPS, so a raw :5432 socket
+// hung. The new Deno Deploy runtime allows outbound TCP and ships a built-in
+// Postgres that injects DATABASE_URL, so a normal client is both possible and
+// simpler — one fewer external service, and the connection string is provided
+// by the platform rather than pasted into the dashboard.
 //
-// Lazy: the connection is created on first use, not at import time. This lets
-// repo modules be imported in permissionless `deno test` (where Deno.env.get
-// throws NotCapable) — integration tests that actually call the DB skip when
+// postgres.js keeps the tagged-template query API the repo layer already uses
+// (`sql`SELECT ... ${value}``), so the swap touches this file and the
+// migration runner, not the four repo modules.
+//
+// Lazy: the pool is created on first use, not at import time. This lets repo
+// modules be imported in permissionless `deno test` (where Deno.env.get throws
+// NotCapable) — integration tests that actually hit the DB skip when
 // DATABASE_URL is absent, and the import itself never explodes.
 
-import { neon } from '@neondatabase/serverless'
+import postgres from 'postgres'
 
-type NeonSql = ReturnType<typeof neon>
+type Sql = ReturnType<typeof postgres>
 
-let _sql: NeonSql | undefined
+let _sql: Sql | undefined
 
-export function getSql(): NeonSql {
+export function getSql(): Sql {
   if (!_sql) {
     const url = Deno.env.get('DATABASE_URL')
     if (!url) throw new Error('DATABASE_URL is not set — cannot connect to PostgreSQL')
-    _sql = neon(url)
+    _sql = postgres(url)
   }
   return _sql
+}
+
+/**
+ * Close the pool and reset the singleton. The long-lived server never calls
+ * this — the pool should live as long as the isolate. It exists for one-shot
+ * processes (the migration runner) and for tests, where an open TCP pool would
+ * otherwise trip Deno's resource sanitizer or leave the process hanging.
+ */
+export async function closeSql(): Promise<void> {
+  if (_sql) {
+    await _sql.end()
+    _sql = undefined
+  }
 }

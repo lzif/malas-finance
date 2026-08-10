@@ -52,9 +52,12 @@ jobs:
       #
       # Add `--org <name>` if this token can reach more than one organization.
       #
-      # Runtime secrets (DATABASE_URL, GOOGLE_AI_API_KEY, TELEGRAM_BOT_TOKEN,
-      # TELEGRAM_WEBHOOK_SECRET) belong in the Deploy dashboard, not here —
-      # DENO_DEPLOY_TOKEN only grants the right to deploy.
+      # Runtime config is NOT set here — DENO_DEPLOY_TOKEN only grants the right
+      # to deploy. DATABASE_URL is injected automatically by the built-in
+      # Postgres. The three app secrets (GOOGLE_AI_API_KEY, TELEGRAM_BOT_TOKEN,
+      # TELEGRAM_WEBHOOK_SECRET) are set once, out of band, from .env.example:
+      #   deno deploy env load .env --app malas-finance
+      # so they live in the app config, never in this repo or the workflow.
       - name: Deploy to Deno Deploy
         env:
           DENO_DEPLOY_TOKEN: ${{ secrets.DENO_DEPLOY_TOKEN }}
