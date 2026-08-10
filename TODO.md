@@ -36,6 +36,19 @@ Postgres.
    `curl "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook?url=https://malas-finance.lzif.deno.net/webhook&secret_token=<TELEGRAM_WEBHOOK_SECRET>"`
    The `secret_token` MUST match `TELEGRAM_WEBHOOK_SECRET` or grammY 401s every update.
 
+### Weekly pay cycle (added 2026-08-10, from real use)
+
+The owner is paid **borongan, every Saturday, a different amount each week**. The spec had no cycle
+for that — only monthly, manual, and rolling-30 — and the consequence was not cosmetic: under
+`monthly-day`, a week's pay is divided across the rest of the month, so the daily allowance read
+**Rp 29.166 instead of Rp 100.000** on a Rp 700k week. Wrong in the _stingy_ direction, which is
+easy to miss because an under-spending nudge feels like discipline rather than a bug.
+
+`domain/cycle.ts` gained a `weekly` mode (`cycleAnchorDay` = weekday, 0=Sun..6=Sat) with
+`dayOfWeek`/`nextWeekday` helpers in `day.ts`. Set it by chatting: `gajian tiap sabtu`. Verified
+live end to end — Monday 2026-08-10, cycle Sat 08-08→Fri 08-14, 5 days left, Rp 700k → **Rp
+140.000/day**, reconciled by hand.
+
 ### Architecture change from the original v3 design (2026-08-10)
 
 The stack moved off the Deploy-Classic-era choices, because Classic shut down 2026-07-20 and the new
@@ -70,9 +83,12 @@ Concrete next steps, roughly in order:
    All four messages matched **existing seed categories** — zero new categories created, which is
    the match-first rule (§5.3) actually holding under a live model rather than in a unit test. Test
    rows were removed afterwards; the DB is back to a clean slate.
-3. **Onboarding** (spec §13): the three-question first-run flow, persisting to `settings` + creating
-   the CASH wallet. Today a fresh install silently gets a `CASH` wallet at Rp 0 and claims the first
-   `chat_id` that talks to it — workable, but not the intended first-run experience.
+3. ~~**Onboarding**~~ — **done**, but not as spec'd. Real use showed two of the three questions
+   should not be asked at all (spec §13 is rewritten to match): daily spend is _learned_ by
+   `runway.ts`, and payday is set by chatting whenever the user knows it. Only spendable balance is
+   prompted for — as a non-blocking nudge while `allowanceToday` is 0, never a gate. `/start` and
+   `/help` (`bot/commands.ts`) are deterministic, so they work with no API key. `started_at` is set
+   automatically on the first transaction.
 4. **Fallback + retry** (spec §15 #8): Gemma fallback when Gemini errors/rate-limits. Right now a
    Gemini outage returns "Parser lagi ngadat" and the message is lost.
 

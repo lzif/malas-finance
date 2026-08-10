@@ -10,7 +10,15 @@
 
 import { parseMessage } from './parser.ts'
 import type { ParsedInput } from './parser.ts'
-import { formatExpense, formatIncome, formatTransfer } from './formatter.ts'
+import {
+  HELP_TEXT,
+  matchCommand,
+  START_TEXT,
+  WEEKDAY_NAMES,
+  ZERO_BALANCE_HINT,
+} from './commands.ts'
+import type { Command } from './commands.ts'
+import { anchorLine, formatExpense, formatIncome, formatTransfer } from './formatter.ts'
 import { computeAllowance } from '../domain/allowance.ts'
 import { cycleFor } from '../domain/cycle.ts'
 import { dayKeyOf } from '../domain/day.ts'
@@ -96,6 +104,19 @@ async function readAllowance(settings: Settings, wallets: Wallet[]): Promise<All
   }
 }
 
+/**
+ * Append the zero-balance nudge when there is no money to divide.
+ *
+ * `allowanceToday === 0` means the allowance basis is empty — the bot has no
+ * idea how much money exists, so the anchor line reads "dari Rp 0". Left
+ * unexplained that looks broken rather than un-configured, which is exactly
+ * how it read in first real use. Nothing is blocked: the transaction is
+ * already saved, this only tells the user how to make the number meaningful.
+ */
+function withZeroBalanceHint(reply: string, allowance: Allowance): string {
+  return allowance.allowanceToday === 0 ? `${reply}\n\n${ZERO_BALANCE_HINT}` : reply
+}
+
 /** Case-insensitive exact match on wallet name; null when the user named none. */
 function matchWallet(name: string | null, wallets: Wallet[]): Wallet | null {
   if (!name) return null
@@ -115,6 +136,54 @@ function resolveWallet(name: string | null, wallets: Wallet[]): Wallet {
   const spendable = wallets.find((w) => w.kind === 'spendable')
   if (!spendable) throw new Error('Tidak ada wallet spendable.')
   return spendable
+}
+
+/**
+ * Handle a deterministic command (spec §11). Runs before the AI parser, so
+ * `/start` and `/help` work with no API key, no quota, and no database rows.
+ */
+async function handleCommand(
+  command: Command,
+  settings: Settings,
+  wallets: Wallet[],
+): Promise<string> {
+  switch (command.kind) {
+    case 'start':
+      return START_TEXT
+    case 'help':
+      return HELP_TEXT
+
+    case 'allowance': {
+      const a = await currentAllowance(settings, wallets)
+      const line = anchorLine(a.remainingAllowance, a.allowanceToday)
+      return a.allowanceToday === 0 ? `${line}\n\n${ZERO_BALANCE_HINT}` : line
+    }
+
+    case 'set-weekly': {
+      await updateSettings({ cycleMode: 'weekly', cycleAnchorDay: command.weekday })
+      return [
+        `✅ Oke, gajian tiap hari ${WEEKDAY_NAMES[command.weekday]}.`,
+        'Jatah harian dibagi rata sampai gajian berikutnya, dan reset tiap ' +
+        `${WEEKDAY_NAMES[command.weekday]}.`,
+        'Nominalnya boleh beda-beda tiap minggu — kehitung otomatis dari saldomu.',
+      ].join('\n')
+    }
+
+    case 'set-monthly': {
+      await updateSettings({ cycleMode: 'monthly-day', cycleAnchorDay: command.day })
+      return [
+        `✅ Oke, gajian tanggal ${command.day}.`,
+        `Jatah harian dibagi rata sampai tanggal ${command.day} bulan depan.`,
+      ].join('\n')
+    }
+
+    case 'payday-unclear':
+      return [
+        '🤔 Gajianmu tiap hari apa? Contoh:',
+        '• `gajian tiap sabtu`',
+        '• `gajian tanggal 25`',
+      ].join('\n')
+  }
 }
 
 /** A brand-new install has no wallets; give it CASH rather than an error (spec §13). */
@@ -151,13 +220,16 @@ async function handleExpense(
   }, settings.dayStartHour)
 
   const allowance = await currentAllowance(settings, wallets)
-  return formatExpense({
-    item: parsed.item || 'Pengeluaran',
-    amount,
-    intent,
-    categoryPath: category.path,
-    ...allowance,
-  })
+  return withZeroBalanceHint(
+    formatExpense({
+      item: parsed.item || 'Pengeluaran',
+      amount,
+      intent,
+      categoryPath: category.path,
+      ...allowance,
+    }),
+    allowance,
+  )
 }
 
 async function handleIncome(
@@ -176,12 +248,15 @@ async function handleIncome(
   }, settings.dayStartHour)
 
   const allowance = await currentAllowance(settings, wallets)
-  return formatIncome({
-    item: parsed.item || 'Pemasukan',
-    amount,
-    walletName: wallet.name,
-    ...allowance,
-  })
+  return withZeroBalanceHint(
+    formatIncome({
+      item: parsed.item || 'Pemasukan',
+      amount,
+      walletName: wallet.name,
+      ...allowance,
+    }),
+    allowance,
+  )
 }
 
 /**
@@ -243,12 +318,6 @@ async function handleTransfer(
  * dropped update, since Telegram gives no second chance to answer.
  */
 export async function handleMessage(text: string, chatId: number): Promise<string> {
-  const apiKey = Deno.env.get('GOOGLE_AI_API_KEY')
-  if (!apiKey) {
-    console.error('GOOGLE_AI_API_KEY not set')
-    return '⚠️ Parser AI belum dikonfigurasi.'
-  }
-
   let settings: Settings
   try {
     settings = await getSettings()
@@ -265,7 +334,27 @@ export async function handleMessage(text: string, chatId: number): Promise<strin
     return '⛔ Bot ini cuma buat satu orang.'
   }
 
-  const [wallets, categories] = await Promise.all([ensureWallets(), getCategoryNames()])
+  const wallets = await ensureWallets()
+
+  // Deterministic commands first: they must work when the model cannot be
+  // reached, which is exactly when a user is most likely to send /help.
+  const command = matchCommand(text)
+  if (command) {
+    try {
+      return await handleCommand(command, settings, wallets)
+    } catch (err) {
+      console.error('handleCommand failed', err)
+      return '⚠️ Gagal memproses perintah. Coba lagi.'
+    }
+  }
+
+  const apiKey = Deno.env.get('GOOGLE_AI_API_KEY')
+  if (!apiKey) {
+    console.error('GOOGLE_AI_API_KEY not set')
+    return '⚠️ Parser AI belum dikonfigurasi.'
+  }
+
+  const categories = await getCategoryNames()
 
   let parsed: ParsedInput
   try {
@@ -286,6 +375,19 @@ export async function handleMessage(text: string, chatId: number): Promise<strin
   }
   if (parsed.amount === null) {
     return '🤔 Belum kebaca angkanya. Coba tulis nominalnya, mis. "kopi 18k".'
+  }
+
+  // The runway needs a reference date for its cold-start weighting. Set it on
+  // the first real transaction rather than asking — the answer is always
+  // "today", so a question would only be ceremony (spec §13).
+  if (settings.startedAt === null) {
+    try {
+      settings = await updateSettings({
+        startedAt: dayKeyOf(Date.now(), settings.dayStartHour),
+      })
+    } catch (err) {
+      console.error('could not set startedAt', err)
+    }
   }
 
   try {

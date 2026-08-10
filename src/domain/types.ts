@@ -1,10 +1,13 @@
 // domain/types.ts — pure data types shared across domain/. No imports.
 
-export type CycleMode = 'monthly-day' | 'manual' | 'rolling'
+export type CycleMode = 'monthly-day' | 'weekly' | 'manual' | 'rolling'
 
 export interface CycleSettings {
   cycleMode: CycleMode
-  /** 1..31, clamped to the end of the month when needed. Used for 'monthly-day' mode. */
+  /**
+   * For 'monthly-day': 1..31, clamped to the end of the month when needed.
+   * For 'weekly': 0..6 (0 = Sunday … 6 = Saturday), the payday weekday.
+   */
   cycleAnchorDay: number
   /** dayKey of the next cycle end, used for 'manual' mode. */
   cycleManualEnd: string | null

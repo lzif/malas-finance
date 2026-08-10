@@ -118,3 +118,60 @@ describe('cycleFor — rolling', () => {
     expect(r.daysRemaining).toBe(30)
   })
 })
+
+describe('cycleFor — weekly', () => {
+  // Saturday payday: piece work paid every Sabtu, amount varies each week.
+  // 2026-08-08 is a Saturday; 2026-08-15 is the next one.
+  const saturday: CycleSettings = {
+    cycleMode: 'weekly',
+    cycleAnchorDay: 6, // 0=Sun .. 6=Sat
+    cycleManualEnd: null,
+  }
+
+  it('on payday the cycle restarts and covers the full week', () => {
+    // The day new money lands must divide by 7, not by 1 — otherwise the
+    // allowance would show a whole week's pay as spendable today.
+    const r = cycleFor('2026-08-08', saturday)
+    expect(r.start).toBe('2026-08-08')
+    expect(r.end).toBe('2026-08-14')
+    expect(r.length).toBe(7)
+    expect(r.daysRemaining).toBe(7)
+    expect(r.status).toBe('active')
+  })
+
+  it('mid-week counts only the days left until the next payday', () => {
+    // Tuesday 2026-08-11 → Sat 8th..Fri 14th, 4 days left (Tue,Wed,Thu,Fri).
+    const r = cycleFor('2026-08-11', saturday)
+    expect(r.start).toBe('2026-08-08')
+    expect(r.end).toBe('2026-08-14')
+    expect(r.daysRemaining).toBe(4)
+  })
+
+  it('the day before payday is the last day of the cycle', () => {
+    const r = cycleFor('2026-08-14', saturday)
+    expect(r.end).toBe('2026-08-14')
+    expect(r.daysRemaining).toBe(1)
+  })
+
+  it('is always a 7-day window regardless of month or year boundaries', () => {
+    // Spans the end of a month...
+    const across = cycleFor('2026-09-01', saturday) // Tuesday
+    expect(across.start).toBe('2026-08-29')
+    expect(across.end).toBe('2026-09-04')
+    expect(across.length).toBe(7)
+    // ...and the end of a year.
+    const newYear = cycleFor('2027-01-01', saturday) // Friday
+    expect(newYear.start).toBe('2026-12-26')
+    expect(newYear.end).toBe('2027-01-01')
+    expect(newYear.length).toBe(7)
+    expect(newYear.daysRemaining).toBe(1)
+  })
+
+  it('works for a non-Saturday payday too', () => {
+    const monday: CycleSettings = { ...saturday, cycleAnchorDay: 1 }
+    const r = cycleFor('2026-08-12', monday) // Wednesday
+    expect(r.start).toBe('2026-08-10') // Monday
+    expect(r.end).toBe('2026-08-16')
+    expect(r.daysRemaining).toBe(5)
+  })
+})

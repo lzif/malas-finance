@@ -98,7 +98,8 @@ Aturan kategori (spec §5.3): cocokkan ke kategori yang sudah ada dulu, jangan b
 
 Kind:
 - expense: pengeluaran biasa (default).
-- income: ada tanda "+" atau kata pemasukan/gajian.
+- income: ada tanda "+" atau kata pemasukan/gajian/saldo. "+saldo 500k" artinya
+  user melaporkan duit yang dia punya sekarang — itu income, item "Saldo awal".
 - transfer: "pindah ... ke ...".
 - commitment: "pertanggal", "tiap tanggal", "setiap bulan", "nabung ... tanggal".
 - clarify: kalau amount tidak jelas, ATAU intent benar-benar ambigu (mis. "helm 350k" bisa planned/impulse), ATAU wallet ambigu padahal ada >1 wallet. Isi "question" dalam bahasa Indonesia yang singkat.

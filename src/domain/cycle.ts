@@ -1,15 +1,29 @@
 // domain/cycle.ts — income cycle boundaries. Pure functions. (spec §4.2)
 
-import { addDays, clampDay, daysBetween, formatDayKey, parseDayKey } from './day.ts'
+import {
+  addDays,
+  clampDay,
+  dayOfWeek,
+  daysBetween,
+  formatDayKey,
+  nextWeekday,
+  parseDayKey,
+} from './day.ts'
 import type { CycleResult, CycleSettings } from './types.ts'
 
 /**
  * cycleFor(today, settings) → { start, end, length, daysRemaining, status }
  *
- * Three modes:
+ * Four modes:
  * - 'monthly-day': the cycle runs from `cycleAnchorDay` this month until the
  *   day before the same date next month. `cycleAnchorDay` is clamped to the
  *   last day of the month when that month is shorter (e.g. 31 in February).
+ * - 'weekly': for pay that arrives on a fixed weekday (`cycleAnchorDay` as
+ *   0=Sun..6=Sat) — piece/daily work paid every Saturday, for instance. The
+ *   cycle runs from the most recent payday through the day before the next
+ *   one, so money is divided over the days it actually has to last. The
+ *   *amount* may differ every payday; that needs no setting, because the
+ *   allowance is recomputed from the real balance each day.
  * - 'rolling': cycleEnd = today + 29, always a 30-day horizon, start = today.
  * - 'manual': cycleEnd = settings.cycleManualEnd. If that date has already
  *   passed, status becomes 'cycle-expired' and the app temporarily falls
@@ -21,6 +35,11 @@ import type { CycleResult, CycleSettings } from './types.ts'
 export function cycleFor(today: string, settings: CycleSettings): CycleResult {
   if (settings.cycleMode === 'monthly-day') {
     const { start, end } = monthlyDayBounds(today, settings.cycleAnchorDay)
+    return finish(today, start, end, 'active')
+  }
+
+  if (settings.cycleMode === 'weekly') {
+    const { start, end } = weeklyBounds(today, settings.cycleAnchorDay)
     return finish(today, start, end, 'active')
   }
 
@@ -36,6 +55,18 @@ export function cycleFor(today: string, settings: CycleSettings): CycleResult {
 
   // 'rolling': always a 30-day horizon.
   return finish(today, today, addDays(today, 29), 'active')
+}
+
+/**
+ * Bounds for a weekly cycle. `payWeekday` is 0=Sun..6=Sat. The cycle starts on
+ * the most recent payday (today itself when today IS payday, so new money is
+ * spread over the full week rather than the tail of the old one) and ends the
+ * day before the next payday — always exactly 7 days.
+ */
+function weeklyBounds(today: string, payWeekday: number): { start: string; end: string } {
+  const back = (dayOfWeek(today) - payWeekday + 7) % 7
+  const start = addDays(today, -back)
+  return { start, end: addDays(nextWeekday(start, payWeekday), -1) }
 }
 
 function monthlyDayBounds(today: string, cycleAnchorDay: number): { start: string; end: string } {
