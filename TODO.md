@@ -36,6 +36,45 @@ Postgres.
    `curl "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook?url=https://malas-finance.lzif.deno.net/webhook&secret_token=<TELEGRAM_WEBHOOK_SECRET>"`
    The `secret_token` MUST match `TELEGRAM_WEBHOOK_SECRET` or grammY 401s every update.
 
+### Admin endpoints (added 2026-08-10)
+
+Maintenance over HTTPS, because the built-in Postgres is TCP `:5432` and many sandboxes block
+outbound TCP — an authenticated HTTP route is the only way to inspect or clean the live database
+from outside the dashboard.
+
+Auth: `x-admin-secret` header must equal `TELEGRAM_WEBHOOK_SECRET`. Fails closed (503 when no secret
+is configured). Reusing the webhook secret is a deliberate single-user trade — a leak now also
+permits a wipe; giving admin its own env var is a one-function change (`adminSecret()` in
+`admin/routes.ts`).
+
+```
+S='<TELEGRAM_WEBHOOK_SECRET>'; B=https://malas-finance.lzif.deno.net/admin
+curl -H "x-admin-secret: $S" $B/health          # liveness, DB reachable, which env vars are set
+curl -H "x-admin-secret: $S" "$B/db?recent=20"  # settings, wallet balances, counts, recent tx
+curl -H "x-admin-secret: $S" "$B/logs?limit=100"
+curl -X POST -H "x-admin-secret: $S" "$B/db/clear?confirm=yes&scope=transactions"
+curl -X POST -H "x-admin-secret: $S" "$B/db/clear?confirm=yes&scope=all"
+```
+
+`scope=transactions` empties the ledger and keeps wallets/settings; `scope=all` is a factory reset
+(also wallets, custom categories, settings back to defaults, Telegram chat claim released) but keeps
+the seed categories. Destructive routes are POST-only and require `confirm=yes`, so no link or
+prefetch can fire them. `/logs` is an in-memory ring buffer (200 lines, per-isolate, empty after a
+cold start) with known secret values redacted; Deno Deploy's own logs remain the durable record.
+
+### ⚠️ Gemini free tier is 20 requests/day — the bot will stop parsing
+
+Hit for real while testing on 2026-08-10:
+`quotaId: GenerateRequestsPerDayPerProjectPerModel-FreeTier, quotaValue: 20` for `gemini-2.5-flash`.
+Every logged expense costs one request, so ~20 messages a day exhausts it and `parseMessage` then
+throws 429.
+
+Today that means the reply is "Parser lagi ngadat" **and the expense is lost** — the worst possible
+failure for a tracker whose whole value is not losing them. This promotes the Gemma fallback (§15
+#8, item 4 below) from a nice-to-have to the next thing that matters, and it should probably also
+queue-and-retry rather than drop, or fall back to the deterministic `parseAmount` so at least the
+amount survives.
+
 ### Weekly pay cycle (added 2026-08-10, from real use)
 
 The owner is paid **borongan, every Saturday, a different amount each week**. The spec had no cycle
@@ -89,8 +128,10 @@ Concrete next steps, roughly in order:
    prompted for — as a non-blocking nudge while `allowanceToday` is 0, never a gate. `/start` and
    `/help` (`bot/commands.ts`) are deterministic, so they work with no API key. `started_at` is set
    automatically on the first transaction.
-4. **Fallback + retry** (spec §15 #8): Gemma fallback when Gemini errors/rate-limits. Right now a
-   Gemini outage returns "Parser lagi ngadat" and the message is lost.
+4. **Fallback + retry** (spec §15 #8) — **now the top priority**, see the quota note above. Gemini's
+   free tier allows 20 requests/day; past that every message 429s and the expense is silently lost.
+   Needs a Gemma fallback, and ideally a deterministic `parseAmount` last resort so the amount
+   survives even when no model answers.
 
 ### The day boundary now names its own timezone — fixed, no env var
 

@@ -16,6 +16,8 @@
 import { Hono } from '@hono/hono'
 import { Bot, webhookCallback } from 'grammy'
 import { handleMessage } from './bot/webhook.ts'
+import { admin } from './admin/routes.ts'
+import { installLogCapture } from './admin/logbuf.ts'
 
 const BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN') ?? ''
 const WEBHOOK_SECRET = Deno.env.get('TELEGRAM_WEBHOOK_SECRET') ?? ''
@@ -71,9 +73,17 @@ function buildWebhook(): WebhookHandler | null {
 
 const webhook = buildWebhook()
 
+// Tee console output into the in-memory buffer /admin/logs reads. Installed
+// here rather than on import so the module stays side-effect-free for tests.
+installLogCapture()
+
 const app = new Hono()
 
 app.get('/', (c) => c.text('MalasFinance v3 bot — ok'))
+
+// Maintenance endpoints, authenticated with TELEGRAM_WEBHOOK_SECRET via the
+// x-admin-secret header (see admin/routes.ts).
+app.route('/admin', admin)
 
 app.post('/webhook', (c) => {
   if (!webhook) return c.text('forbidden', 403)
