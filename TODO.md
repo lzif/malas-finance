@@ -6,35 +6,48 @@ Last updated: 2026-08-10
 
 ## Pick up here
 
-**The bot works end to end, now on the new Deno Deploy stack.** A Telegram message goes all the way
-through: AI parse → route → repository write → allowance recompute → formatted reply. What is left
-is the surrounding experience, not the core loop.
+**Status: LIVE IN PRODUCTION and working.** `https://malas-finance.lzif.deno.net` — a real Telegram
+message goes all the way through: AI parse → route → repository write → allowance recompute →
+formatted reply. Phase 1 is complete. What remains is the review loop (Phase 3) and hardening, not
+the core loop.
 
-### Deployment setup the owner must do once (in console.deno.com)
+Verified live on 2026-08-10 (production, via `/admin`): app healthy, database reachable, all four
+env vars set, webhook enforcing its secret, 41 seed categories intact, ledger empty after a
+deliberate clear.
 
-Deploy is via **Deno's Git integration**: the app is linked to the GitHub repo and deploys the
-production branch (`main`) on every push — no workflow, no deploy token. (There is no `deno deploy`
-Actions workflow; `ci.yml` still runs the gates on push/PR.) **The new stack must be merged to
-`main` first** — until then `main` is the old Neon-HTTP code, which cannot talk to the built-in
-Postgres.
+### ⚠️ Do these first, from Telegram — the bot is live but not yet configured for real use
 
-1. **Create the app** linked to `lzif/malas-finance`, root dir, entrypoint `src/main.ts`, no build
-   command. Production URL: `https://malas-finance.lzif.deno.net`.
-2. **Provision the built-in Postgres** for the app. It injects `DATABASE_URL` automatically — do not
-   set it by hand.
-3. **Automate the migration** — set the app's **Pre-deploy command** (in "Edit app config") to
-   `deno task db:migrate`. Deno runs it after build, before the deploy goes live, with
-   `DATABASE_URL` in scope; the migration is idempotent (`CREATE ... IF NOT EXISTS`,
-   `ON CONFLICT DO NOTHING`), so running it every deploy is safe and the schema is never stale.
-   (Manual fallback for local work: set `DATABASE_URL` and run `deno task db:migrate` yourself.) The
-   pre-deploy command needs the built-in Postgres provisioned (step 2) first, or it has no
-   `DATABASE_URL` to migrate against.
-4. **Set the three secrets** — `GOOGLE_AI_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`
-   — via the app's "Environment Variables" in the dashboard, or from a local `.env` (see
-   `.env.example`) with `deno deploy env load .env --app malas-finance`.
-5. **Point Telegram at the deploy** once it is live:
-   `curl "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook?url=https://malas-finance.lzif.deno.net/webhook&secret_token=<TELEGRAM_WEBHOOK_SECRET>"`
-   The `secret_token` MUST match `TELEGRAM_WEBHOOK_SECRET` or grammY 401s every update.
+1. **`gajian tiap sabtu`** — production `cycle_mode` is still `monthly-day` / anchor 1. The owner is
+   paid weekly (Saturday), so until this is sent, a week's pay is divided across the rest of the
+   month and the allowance reads far too low (Rp 29.166 instead of Rp 140.000 on a Rp 700k week).
+   The earlier attempt to set this predates the code that understands it, so it never stored.
+2. **`+saldo <actual cash>`** — spendable balance is Rp 0, so `allowanceToday` is Rp 0 and every
+   reply reads "dari Rp 0". Nothing else can derive this number.
+3. **Rotate `TELEGRAM_WEBHOOK_SECRET`.** The current value was shared in an assistant chat
+   transcript on 2026-08-10, and because admin auth reuses it, that one value permits both a
+   database wipe and forged Telegram updates. Change it in the Deploy dashboard **and** re-run
+   `setWebhook` with the matching new `secret_token` — they must match or grammY 401s every update.
+   Consider splitting admin onto its own `ADMIN_SECRET` at the same time (a one-function change in
+   `admin/routes.ts`) so the two capabilities stop sharing a key.
+4. **Register the commands with BotFather** (`/setcommands`) so `/start`, `/help`, `/jatah` appear
+   in Telegram's menu. They already work when typed.
+
+### Deployment (done — recorded for reference)
+
+Deploy is **Deno Git integration**: the app is linked to `lzif/malas-finance` and deploys `main` on
+every push — no workflow, no deploy token. `ci.yml` runs the gates on push/PR. There is deliberately
+no `deno deploy` Actions workflow; it was removed to avoid two deployers racing.
+
+- App: `malas-finance`, root directory, entrypoint `src/main.ts`, no build/install command.
+- Database: Deno Deploy **built-in Postgres**, which injects `DATABASE_URL` automatically. Never set
+  it by hand in the dashboard.
+- Migrations run automatically via the app's **Pre-deploy command** = `deno task db:migrate`
+  (idempotent, so every deploy is safe). Local fallback: set `DATABASE_URL` and run it yourself.
+- Secrets in the dashboard: `GOOGLE_AI_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`.
+  `.env.example` documents them; `deno deploy env load .env --app malas-finance` sets them from a
+  local `.env` without touching the dashboard.
+- Telegram webhook:
+  `curl "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://malas-finance.lzif.deno.net/webhook&secret_token=<SECRET>"`
 
 ### Admin endpoints (added 2026-08-10)
 
@@ -126,7 +139,51 @@ runtime lifts the constraints that drove them:
   and a valid update ran the real `handleMessage` → live Gemini → local Postgres → reply
   (`rokok surya 27.5k` → `[IMPULSIF]`, `Rokok & Sejenisnya`).
 
-Concrete next steps, roughly in order:
+## What to do next
+
+**The most valuable next step is not code.** spec §17's first acceptance criterion is reconciling
+one full cycle by hand: log real spending for a week (the pay cycle is weekly), then check the bot's
+"sisa hari ini" against actual cash. The domain math is unit-green and one weekly cycle has been
+reconciled by hand on paper, but "tests pass" is not "the anchor number matched my wallet for a
+month". Nothing below matters if that number lies. **Use it for a week before building more.**
+
+When there is appetite to build, in rough priority order:
+
+1. **Phase 3 — nightly summary + weekly audit** (spec §8, §16). The biggest remaining product bet:
+   K3 says the bot must _speak first_, and today it only ever answers. This is the anti-habituation
+   mechanism the whole premise rests on (§2). Needs `Deno.cron` (`src/scheduled/nightly.ts`,
+   `weekly.ts`) — cron is already enabled on the Deploy app. The weekly audit should land Sunday
+   night, but note the pay cycle is now Saturday-anchored, so confirm the audit window still lines
+   up with a Sat→Fri cycle rather than assuming the spec's Sun→Sat framing.
+2. **Edit-via-reply** (spec §8): "1 harusnya 25k" / "3 rutin". Today a mistake cannot be corrected
+   from chat at all — the only fix is `/admin` or SQL. This gets sharper the moment the nightly
+   summary starts inviting corrections.
+3. **Phase 2 — commitments** (spec §16). `domain/commitment.ts` is ported and tested; only bot/repo
+   wiring is missing. `handleMessage` currently replies that commitments are unsupported.
+4. **Resolve the reserve-wallet spec contradiction** (below). Code is honest at the boundary, but
+   `domain/` and the spec still disagree on paper.
+5. **Wallet management from chat** (spec §12): `tambah wallet gopay 150k`. Today only the
+   auto-created CASH wallet exists, so a reserve wallet cannot be made without SQL — which also
+   makes the reserve-wallet logic unreachable in practice.
+
+### Where things live (orientation for a fresh session)
+
+```
+src/domain/     pure math, no I/O — money, day, cycle, allowance, runway, commitment, types
+src/db/         schema.sql, seed.sql, migrate.ts, connection.ts (postgres.js pool), rows.ts
+src/db/repo/    the only write path — settings, wallets, transactions, categories (+ admin.ts,
+                deliberately not imported by the message flow)
+src/bot/        parser.ts (model chain), commands.ts (deterministic, pre-AI), webhook.ts
+                (handleMessage: route → write → allowance → format), formatter.ts (pure)
+src/admin/      routes.ts (authed maintenance), logbuf.ts (in-memory log ring)
+src/main.ts     transport only: Hono routing + grammY webhook
+```
+
+Gates: `deno task test` (permissionless — DB/live tests skip), `deno task check`, `deno lint src/`,
+`deno fmt --check src/ deno.json`. Integration tests need a real Postgres: see CLAUDE.md for the
+local-Postgres recipe, since outbound `:5432` is blocked in the sandbox.
+
+### Completed (for context, most recent first)
 
 1. ~~**`src/db/repo/*.ts`**~~ — **done.** Settings, wallets, transactions, categories — the 19
    integration steps now pass over TCP (postgres.js) as well as they did on Neon-HTTP. Lazy
@@ -214,23 +271,25 @@ Setup for the next session: `deno task db:migrate` applies `schema.sql` + `seed.
 
 ---
 
-## Phase 1 — Foundation (spec §16)
+## Phase 1 — Foundation (spec §16) — COMPLETE, deployed and in real use
 
-| Item                                                                  | Status                                                                                                                                                                                          |
-| --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Deno project setup (`deno.json`, tasks, import map, CI)               | done                                                                                                                                                                                            |
-| `domain/` ported from v2 + tests green on Deno                        | done — money, day, cycle, commitment, allowance, runway, types (39 tests / 96 steps)                                                                                                            |
-| `parseAmount` — Indonesian amount shorthand (§6.2)                    | done — k/rb/ribu, jt/juta/m, dotted-grouping disambiguation, tested                                                                                                                             |
-| `bot/formatter.ts` — pure reply formatting (§6, §8)                   | started — expense/income/transfer + anchor line, tested. Nightly/weekly/ask formatting still to come                                                                                            |
-| PostgreSQL schema (`db/schema.sql`)                                   | done — matches spec §5.1                                                                                                                                                                        |
-| Seed data (`db/seed.sql`) — seed categories + settings row            | done — idempotent, **verified against real Neon** (two migrate runs stay 11 top / 30 sub / 0 dupes)                                                                                             |
-| `db/connection.ts` (Postgres pool)                                    | done — postgres.js (TCP) against the built-in DB; was Neon-HTTP until Deploy Classic's HTTPS-only limit was lifted (2026-07-20). Tagged-template API preserved, so the repo layer was untouched |
-| `db/migrate.ts` + `db/sql.ts` (idempotent migration runner)           | done — `deno task db:migrate`; `splitStatements` unit-tested (a live run caught a comment-semicolon split bug, now pinned)                                                                      |
-| `bot/parser.ts` (AI parser, Gemini)                                   | done — **verified against live Gemini**: rokok→impulse, makan siang→routine, +gajian→income. Hard rules (§7.2) enforced in code, not left to the model                                          |
-| `main.ts` webhook entry                                               | done — Hono routing + grammY `webhookCallback` (secret check, fails closed); delegates to `bot/webhook.ts`                                                                                      |
-| `db/repo/*` with integrity rules (§5.2)                               | done — settings, wallets, transactions, categories; **19 integration steps verified over real TCP** (postgres.js, local PG 16); lazy `getSql()` so permissionless `deno test` stays green       |
-| Real expense/income/transfer flow (parser → repo → allowance → reply) | done — `bot/webhook.ts`; **verified live** (Gemini + Postgres) across expense/income/transfer/clarify + the single-user guard                                                                   |
-| Onboarding (§13)                                                      | not started                                                                                                                                                                                     |
+| Item                                                                  | Status                                                                                                                                                                                              |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Deno project setup (`deno.json`, tasks, import map, CI)               | done                                                                                                                                                                                                |
+| `domain/` ported from v2 + tests green on Deno                        | done — money, day, cycle, commitment, allowance, runway, types (39 tests / 96 steps)                                                                                                                |
+| `parseAmount` — Indonesian amount shorthand (§6.2)                    | done — k/rb/ribu, jt/juta/m, dotted-grouping disambiguation, tested                                                                                                                                 |
+| `bot/formatter.ts` — pure reply formatting (§6, §8)                   | started — expense/income/transfer + anchor line, tested. Nightly/weekly/ask formatting still to come                                                                                                |
+| PostgreSQL schema (`db/schema.sql`)                                   | done — matches spec §5.1                                                                                                                                                                            |
+| Seed data (`db/seed.sql`) — seed categories + settings row            | done — idempotent, **verified against real Neon** (two migrate runs stay 11 top / 30 sub / 0 dupes)                                                                                                 |
+| `db/connection.ts` (Postgres pool)                                    | done — postgres.js (TCP) against the built-in DB; was Neon-HTTP until Deploy Classic's HTTPS-only limit was lifted (2026-07-20). Tagged-template API preserved, so the repo layer was untouched     |
+| `db/migrate.ts` + `db/sql.ts` (idempotent migration runner)           | done — `deno task db:migrate`; `splitStatements` unit-tested (a live run caught a comment-semicolon split bug, now pinned)                                                                          |
+| `bot/parser.ts` (AI parser, Gemini)                                   | done — **verified against live Gemini**: rokok→impulse, makan siang→routine, +gajian→income. Hard rules (§7.2) enforced in code, not left to the model                                              |
+| `main.ts` webhook entry                                               | done — Hono routing + grammY `webhookCallback` (secret check, fails closed); delegates to `bot/webhook.ts`                                                                                          |
+| `db/repo/*` with integrity rules (§5.2)                               | done — settings, wallets, transactions, categories; **19 integration steps verified over real TCP** (postgres.js, local PG 16); lazy `getSql()` so permissionless `deno test` stays green           |
+| Real expense/income/transfer flow (parser → repo → allowance → reply) | done — `bot/webhook.ts`; **verified live** (Gemini + Postgres) across expense/income/transfer/clarify + the single-user guard                                                                       |
+| Onboarding (§13)                                                      | done — reshaped: only spendable balance is prompted (non-blocking nudge). Daily spend is learned by `runway.ts`; payday set by chat. `/start`, `/help`, `/jatah` deterministic in `bot/commands.ts` |
+| Model fallback chain (§15 #8)                                         | done — `gemini-3.1-flash-lite` → `gemma-4-26b-a4b-it` → deterministic `offlineParse`, ordered by free-tier quota so an expense is never lost                                                        |
+| Admin/maintenance endpoints                                           | done — `/admin/health`, `/admin/db`, `/admin/logs`, `/admin/db/clear`; authed, fails closed                                                                                                         |
 
 ## Phase 2 — Commitments (spec §16)
 
