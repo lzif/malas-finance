@@ -100,8 +100,11 @@ Kind:
 - expense: pengeluaran biasa (default).
 - income: ada tanda "+" atau kata pemasukan/gajian/saldo. "+saldo 500k" artinya
   user melaporkan duit yang dia punya sekarang — itu income, item "Saldo awal".
-- transfer: "pindah ... ke ...".
-- commitment: "pertanggal", "tiap tanggal", "setiap bulan", "nabung ... tanggal".
+- transfer: "pindah ... ke ...", ATAU nabung tanpa tanggal ("nabung 150k") — itu
+  duit pindah ke tabungan, BUKAN commitment dan BUKAN expense.
+- commitment: HANYA kalau ada tanggal/periode berulang yang eksplisit —
+  "pertanggal", "tiap tanggal N", "setiap bulan", "nabung 150k tiap tanggal 5".
+  Tanpa tanggal berulang, jangan pernah pakai commitment. Isi "dueDay".
 - clarify: kalau amount tidak jelas, ATAU intent benar-benar ambigu (mis. "helm 350k" bisa planned/impulse), ATAU wallet ambigu padahal ada >1 wallet. Isi "question" dalam bahasa Indonesia yang singkat.
 
 Jangan clarify kalau: barang jelas (rokok, makan siang, bensin), atau cuma ada 1 wallet (jangan pernah tanya wallet).

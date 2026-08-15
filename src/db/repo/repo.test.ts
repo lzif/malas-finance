@@ -301,3 +301,72 @@ describe('categories repo', () => {
     },
   })
 })
+
+describe('commitments repo', () => {
+  it({
+    name: 'createCommitment round-trips and appears in listCommitments',
+    ignore: !HAS_DB,
+    fn: async () => {
+      const { createCommitment, listCommitments, deactivateCommitment } = await import(
+        './commitments.ts'
+      )
+      const c = await createCommitment('__test_wifi__', 85000, 'bill', 5)
+      cleanup.push(() => deactivateCommitment(c.id))
+
+      expect(c.amount).toBe(85000)
+      expect(c.kind).toBe('bill')
+      expect(c.dueDay).toBe(5)
+      expect(c.active).toBe(true)
+
+      const all = await listCommitments()
+      expect(all.map((x) => x.id)).toContain(c.id)
+    },
+  })
+
+  it({
+    name: 'createCommitment rejects a dueDay outside 1..31 before hitting the DB',
+    ignore: !HAS_DB,
+    fn: async () => {
+      const { createCommitment } = await import('./commitments.ts')
+      await expect(createCommitment('__test_bad__', 1000, 'bill', 32)).rejects.toThrow('dueDay')
+      await expect(createCommitment('__test_bad__', 0, 'bill', 5)).rejects.toThrow('amount')
+    },
+  })
+
+  it({
+    name: 'findCommitmentByName matches the name inside a longer payment message',
+    ignore: !HAS_DB,
+    fn: async () => {
+      const { createCommitment, findCommitmentByName, deactivateCommitment } = await import(
+        './commitments.ts'
+      )
+      const c = await createCommitment('__test_bpjs__', 106000, 'bill', 10)
+      cleanup.push(() => deactivateCommitment(c.id))
+
+      // Exact, case-insensitive, and containment — the three shapes a chat
+      // message actually arrives in.
+      expect((await findCommitmentByName('__test_bpjs__'))?.id).toBe(c.id)
+      expect((await findCommitmentByName('__TEST_BPJS__'))?.id).toBe(c.id)
+      expect((await findCommitmentByName('bayar __test_bpjs__ bulan ini'))?.id).toBe(c.id)
+
+      expect(await findCommitmentByName('kopi')).toBeNull()
+      expect(await findCommitmentByName('')).toBeNull()
+    },
+  })
+
+  it({
+    name: 'a deactivated commitment stops matching payments',
+    ignore: !HAS_DB,
+    fn: async () => {
+      const { createCommitment, findCommitmentByName, deactivateCommitment } = await import(
+        './commitments.ts'
+      )
+      const c = await createCommitment('__test_gone__', 50000, 'saving', 1)
+      cleanup.push(() => deactivateCommitment(c.id))
+
+      expect((await findCommitmentByName('__test_gone__'))?.id).toBe(c.id)
+      await deactivateCommitment(c.id)
+      expect(await findCommitmentByName('__test_gone__')).toBeNull()
+    },
+  })
+})
