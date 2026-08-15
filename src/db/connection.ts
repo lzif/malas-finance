@@ -27,7 +27,13 @@ export function getSql(): Sql {
   if (!_sql) {
     const url = Deno.env.get('DATABASE_URL')
     if (!url) throw new Error('DATABASE_URL is not set — cannot connect to PostgreSQL')
-    _sql = postgres(url)
+    // Swallow server NOTICEs. schema.sql is deliberately idempotent
+    // (`CREATE ... IF NOT EXISTS` twelve times over), so every re-run of the
+    // pre-deploy migration makes Postgres emit twelve 42P07 "already exists,
+    // skipping" notices, which postgres.js prints by default. Deploy runs the
+    // pre-deploy command once per partition, so that is 24 lines of noise per
+    // deploy — enough to bury the logs that matter.
+    _sql = postgres(url, { onnotice: () => {} })
   }
   return _sql
 }

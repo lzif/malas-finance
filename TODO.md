@@ -2,7 +2,7 @@
 
 `spec.md` says where this is going. This file says where it actually is.
 
-Last updated: 2026-08-10
+Last updated: 2026-08-15
 
 ## Pick up here
 
@@ -17,20 +17,20 @@ deliberate clear.
 
 ### ⚠️ Do these first, from Telegram — the bot is live but not yet configured for real use
 
-1. **`gajian tiap sabtu`** — production `cycle_mode` is still `monthly-day` / anchor 1. The owner is
-   paid weekly (Saturday), so until this is sent, a week's pay is divided across the rest of the
-   month and the allowance reads far too low (Rp 29.166 instead of Rp 140.000 on a Rp 700k week).
-   The earlier attempt to set this predates the code that understands it, so it never stored.
-2. **`+saldo <actual cash>`** — spendable balance is Rp 0, so `allowanceToday` is Rp 0 and every
-   reply reads "dari Rp 0". Nothing else can derive this number.
+1. ~~**`gajian tiap sabtu`**~~ — done 2026-08-10; the bot confirmed a Saturday weekly cycle.
+2. ~~**`+saldo <actual cash>`**~~ — done; income has been recorded and the allowance no longer reads
+   "dari Rp 0".
 3. **Rotate `TELEGRAM_WEBHOOK_SECRET`.** The current value was shared in an assistant chat
    transcript on 2026-08-10, and because admin auth reuses it, that one value permits both a
    database wipe and forged Telegram updates. Change it in the Deploy dashboard **and** re-run
    `setWebhook` with the matching new `secret_token` — they must match or grammY 401s every update.
    Consider splitting admin onto its own `ADMIN_SECRET` at the same time (a one-function change in
    `admin/routes.ts`) so the two capabilities stop sharing a key.
-4. **Register the commands with BotFather** (`/setcommands`) so `/start`, `/help`, `/jatah` appear
-   in Telegram's menu. They already work when typed.
+4. ~~**Register the commands with BotFather**~~ — done; verified via `getMyCommands` on 2026-08-15.
+5. **Point the BotFather menu button at the dashboard** so `/app` is reachable. In @BotFather: _Bot
+   Settings → Menu Button → Configure_ → `https://malas-finance.lzif.deno.net/app`. Until this is
+   set the dashboard exists but nothing opens it, and it cannot be opened from a normal browser by
+   design — it needs the Telegram `initData` signature.
 
 ### Deployment (done — recorded for reference)
 
@@ -158,13 +158,18 @@ When there is appetite to build, in rough priority order:
 2. **Edit-via-reply** (spec §8): "1 harusnya 25k" / "3 rutin". Today a mistake cannot be corrected
    from chat at all — the only fix is `/admin` or SQL. This gets sharper the moment the nightly
    summary starts inviting corrections.
-3. **Phase 2 — commitments** (spec §16). `domain/commitment.ts` is ported and tested; only bot/repo
-   wiring is missing. `handleMessage` currently replies that commitments are unsupported.
+3. **Monthly bills under a weekly cycle reserve nothing** (2026-08-15). `commitmentWindow` is the
+   cycle itself, so with a Saturday-anchored weekly cycle a bill due on the 5th falls inside the
+   window roughly one week in four; the other three weeks `unpaidCommitments` is 0. The payment is
+   still kept out of `spentToday`, so it is spread over the cycle rather than charged to one day —
+   which is what fixed the collapse — but true pro-rata reservation (a monthly bill costing
+   `amount × 7/30` per weekly cycle) is not implemented. Changing it means changing the window rule
+   in `domain/commitment.ts`, whose current definition is deliberate and documented — a spec
+   decision, not a bug fix.
 4. **Resolve the reserve-wallet spec contradiction** (below). Code is honest at the boundary, but
    `domain/` and the spec still disagree on paper.
-5. **Wallet management from chat** (spec §12): `tambah wallet gopay 150k`. Today only the
-   auto-created CASH wallet exists, so a reserve wallet cannot be made without SQL — which also
-   makes the reserve-wallet logic unreachable in practice.
+5. **Wallet management from chat** (spec §12): `tambah wallet gopay 150k`. A reserve wallet is now
+   auto-created as `TABUNGAN` on the first `nabung`, but any other wallet still needs SQL.
 
 ### Where things live (orientation for a fresh session)
 
@@ -293,9 +298,19 @@ Setup for the next session: `deno task db:migrate` applies `schema.sql` + `seed.
 
 ## Phase 2 — Commitments (spec §16)
 
-Not started. Registration via natural language, payment flow, allowance deduction, due-date
-reminders. The domain functions (`domain/commitment.ts`) are ported and tested; only the bot/repo
-wiring is missing.
+**Partly done (2026-08-15).** Registration via natural language, the payment flow, and allowance
+deduction all work; due-date reminders do not.
+
+- `db/repo/commitments.ts` — create/list/deactivate, plus `findCommitmentByName` (case-insensitive,
+  containment) which is how a chat message like "Wifi 85k" finds the bill it settles.
+- `handleCommitment` in `bot/webhook.ts` registers a bill or saving from "wifi 85k tiap tanggal 5";
+  it asks for the due day rather than inventing one when the model omits it.
+- `readAllowance` passes a real `unpaidCommitments` instead of the hardcoded `0`, and a matched
+  payment carries `commitmentId` so `domain/allowance.ts` keeps it out of `spentToday` — otherwise
+  the amount would be both reserved and charged to the day.
+
+Still missing: due-date reminders, editing or deleting a commitment from chat, and a `/tagihan`
+listing. Also see the weekly-cycle reservation gap under "Pick up here".
 
 ## Phase 3 — Review (spec §16)
 
@@ -304,8 +319,23 @@ flagging. Needs `Deno.cron` (`src/scheduled/nightly.ts`, `weekly.ts`).
 
 ## Phase 4 — Dashboard (spec §16)
 
-Not started. Read-only Telegram WebApp (`src/web/`): impulse ratio, 28-day sparkline, weekly
-comparison, intent/category breakdown, commitment status.
+**Mostly done (2026-08-15).** Read-only Telegram WebApp at `/app`, served by `src/web/`.
+
+- `web/auth.ts` — validates Telegram `initData` (HMAC-SHA256, constant-time compare, 24h expiry).
+  The dashboard has no password of its own, and deliberately does not reuse the admin secret: that
+  key permits a database wipe, so it must never reach a browser.
+- `web/app.ts` — one `GET /api/summary` returning everything the page draws. Also checks the
+  Telegram user id against `settings.telegram_chat_id`, so a valid signature from _someone else_
+  gets a 403 rather than the owner's ledger.
+- `web/page.ts` — the page as one self-contained string. Hand-written SVG sparkline and bars: no
+  chart library, because a build step would be the only reason to add one.
+- `domain/stats.ts` — all aggregation, pure and unit-tested (income/expense, saving rate, saved to
+  reserve, impulse ratio, category and intent breakdown, 28-day series with zero-filled gaps).
+- `readAllowanceDetail` is exported from `bot/webhook.ts` so the dashboard shows the _same_ anchor
+  number as the chat reply rather than a second implementation that can drift.
+
+Still missing: weekly comparison (spec §10 lists it; the 28-day series is there, the week-over-week
+delta is not), and the BotFather menu button that opens it (see "Do these first").
 
 ---
 

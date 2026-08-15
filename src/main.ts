@@ -17,6 +17,7 @@ import { Hono } from '@hono/hono'
 import { Bot, webhookCallback } from 'grammy'
 import { handleMessage } from './bot/webhook.ts'
 import { admin } from './admin/routes.ts'
+import { web } from './web/app.ts'
 import { installLogCapture } from './admin/logbuf.ts'
 
 const BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN') ?? ''
@@ -79,11 +80,39 @@ installLogCapture()
 
 const app = new Hono()
 
+// One line per request. Without it the Deploy log stream shows only cold
+// starts: a healthy request is invisible, and a request that succeeds with the
+// wrong answer leaves no trace at all. Registered before the routes so it
+// wraps them.
+//
+// Method, path, status and duration only — deliberately no headers (the
+// webhook carries the shared secret in X-Telegram-Bot-Api-Secret-Token) and no
+// body (it carries the user's message text). `finally` so a throwing handler
+// still gets logged.
+app.use('*', async (c, next) => {
+  const start = performance.now()
+  try {
+    await next()
+  } finally {
+    const ms = Math.round(performance.now() - start)
+    console.log(`${c.req.method} ${c.req.path} ${c.res.status} ${ms}ms`)
+  }
+})
+
 app.get('/', (c) => c.text('MalasFinance v3 bot — ok'))
 
 // Maintenance endpoints, authenticated with TELEGRAM_WEBHOOK_SECRET via the
 // x-admin-secret header (see admin/routes.ts).
 app.route('/admin', admin)
+
+// Read-only dashboard (spec §10). Authenticated by the Telegram initData
+// signature inside web/, not by a secret of its own — see web/auth.ts.
+app.route('/app', web)
+
+// Whoever sets the WebApp URL in BotFather may or may not type the trailing
+// slash; only /app matches the mounted route, so make the other spelling work
+// instead of showing a 404 that looks like the dashboard is broken.
+app.get('/app/', (c) => c.redirect('/app', 301))
 
 app.post('/webhook', (c) => {
   if (!webhook) return c.text('forbidden', 403)

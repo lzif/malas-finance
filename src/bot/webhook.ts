@@ -20,6 +20,7 @@ import {
 import type { Command } from './commands.ts'
 import { anchorLine, formatExpense, formatIncome, formatTransfer } from './formatter.ts'
 import { computeAllowance } from '../domain/allowance.ts'
+import type { AllowanceResult } from '../domain/allowance.ts'
 import { cycleFor } from '../domain/cycle.ts'
 import { dayKeyOf } from '../domain/day.ts'
 import { formatRupiah } from '../domain/money.ts'
@@ -28,11 +29,23 @@ import { getSettings, updateSettings } from '../db/repo/settings.ts'
 import type { Settings } from '../db/repo/settings.ts'
 import { createWallet, listWallets, spendableBalance } from '../db/repo/wallets.ts'
 import type { Wallet } from '../db/repo/wallets.ts'
-import { createTransaction, getTransactionsForDay } from '../db/repo/transactions.ts'
+import {
+  createTransaction,
+  getTransactionsForCycle,
+  getTransactionsForDay,
+} from '../db/repo/transactions.ts'
+import { createCommitment, findCommitmentByName, listCommitments } from '../db/repo/commitments.ts'
+import { unpaidCommitments } from '../domain/commitment.ts'
 import { findOrCreateCategory, getCategoryNames } from '../db/repo/categories.ts'
 
 /** Fallback when the model returns an expense with no category (spec §5.3). */
 const FALLBACK_CATEGORY = 'Lainnya'
+
+/** Words that mark a move or a commitment as savings rather than spending. */
+const SAVING_WORDS = ['nabung', 'tabung', 'tabungan', 'saving']
+
+/** Auto-created the first time the user saves, so "nabung 150k" just works. */
+const DEFAULT_RESERVE_WALLET = 'TABUNGAN'
 
 /**
  * Fallback when the model returns an expense with no intent. Deliberately the
@@ -66,11 +79,30 @@ async function currentAllowance(settings: Settings, wallets: Wallet[]): Promise<
 }
 
 async function readAllowance(settings: Settings, wallets: Wallet[]): Promise<Allowance> {
+  const result = await readAllowanceDetail(settings, wallets)
+  return {
+    remainingAllowance: result.remainingAllowance,
+    allowanceToday: result.allowanceToday,
+  }
+}
+
+/**
+ * The full allowance computation, exported so the Phase-4 dashboard shows the
+ * same number the chat reply does. Duplicating this in web/ would let the two
+ * drift, and a dashboard that contradicts the bot is worse than no dashboard —
+ * the anchor number only works if there is exactly one of it (spec §4.4).
+ */
+export async function readAllowanceDetail(
+  settings: Settings,
+  wallets: Wallet[],
+): Promise<AllowanceResult> {
   const today = dayKeyOf(Date.now(), settings.dayStartHour)
   const cycle = cycleFor(today, settings)
-  const [balance, transactions] = await Promise.all([
+  const [balance, transactions, commitments, cycleTransactions] = await Promise.all([
     spendableBalance(),
     getTransactionsForDay(today),
+    listCommitments(),
+    getTransactionsForCycle(cycle.start, cycle.end),
   ])
 
   // Spending charged to a reserve wallet must not enter the allowance math.
@@ -91,17 +123,28 @@ async function readAllowance(settings: Settings, wallets: Wallet[]): Promise<All
         amount: t.amount,
         commitmentId: t.commitmentId,
       })),
-    // Commitments are Phase 2; the parameter stays in the signature so adding
-    // them later does not reshape domain/ (see AllowanceInput).
-    unpaidCommitments: 0,
+    // Unpaid bills due this cycle are RESERVED out of the basis, not charged
+    // to whichever day they happen to be paid on. Without this a Rp 275k debt
+    // payment landed entirely on today, driving "sisa hari ini" to -Rp 411.172
+    // against a Rp 121.428 daily allowance — arithmetically exact, and
+    // meaningless. Reserving spreads the obligation across the cycle instead,
+    // and the payment itself carries a commitmentId so domain/allowance.ts
+    // leaves it out of spentToday (it would otherwise be counted twice).
+    unpaidCommitments: unpaidCommitments(
+      commitments,
+      cycleTransactions.map((t) => ({
+        commitmentId: t.commitmentId,
+        dayKey: t.dayKey,
+        kind: t.kind,
+      })),
+      cycle.start,
+      cycle.end,
+    ),
     endBuffer: settings.endBuffer,
     daysRemaining: cycle.daysRemaining,
   })
 
-  return {
-    remainingAllowance: result.remainingAllowance,
-    allowanceToday: result.allowanceToday,
-  }
+  return result
 }
 
 /**
@@ -210,6 +253,12 @@ async function handleExpense(
     : await findOrCreateCategory(FALLBACK_CATEGORY, null)
   const intent = parsed.intent ?? FALLBACK_INTENT
 
+  // Does this payment settle a declared bill? If so it is already reserved out
+  // of the allowance basis, so tagging it keeps it out of spentToday — an
+  // untagged payment would be charged to today AND stay reserved, which is the
+  // double-count that makes the daily number collapse.
+  const commitment = await findCommitmentByName(parsed.item ?? '')
+
   await createTransaction({
     kind: 'out',
     amount,
@@ -217,10 +266,11 @@ async function handleExpense(
     categoryId: category.subcategoryId ?? category.categoryId,
     note: parsed.notes,
     walletId: wallet.id,
+    commitmentId: commitment?.id ?? null,
   }, settings.dayStartHour)
 
   const allowance = await currentAllowance(settings, wallets)
-  return withZeroBalanceHint(
+  const reply = withZeroBalanceHint(
     formatExpense({
       item: parsed.item || 'Pengeluaran',
       amount,
@@ -230,6 +280,18 @@ async function handleExpense(
     }),
     allowance,
   )
+  // Say so explicitly: the user just spent real money and saw the daily number
+  // move far less than the amount. Without a reason that reads as a bug.
+  //
+  // Careful with the wording — the allowance does still fall, by
+  // amount / daysRemaining, because the money genuinely left the wallet. What
+  // the tag buys is that it is NOT charged to today as discretionary spending;
+  // it is absorbed by the cycle. Claiming it costs nothing would be a lie the
+  // user could check.
+  return commitment
+    ? `${reply}\n🔁 Tagihan "${commitment.name}" — nggak dihitung jajan hari ini, ` +
+      'dibagi rata ke sisa hari.'
+    : reply
 }
 
 async function handleIncome(
@@ -276,17 +338,37 @@ async function handleTransfer(
   settings: Settings,
 ): Promise<string> {
   const amount = parsed.amount!
-  if (wallets.length < 2) {
-    return '🤔 Cuma ada satu wallet, jadi belum ada tujuan pindahnya.'
+
+  // "nabung 150k" names no destination — the user should not have to create a
+  // wallet before they can save. Auto-provision one reserve wallet the first
+  // time, the same way the CASH wallet is auto-created. Without this the reply
+  // is "cuma ada satu wallet", which reads as the bot refusing to save money.
+  const savingHint = `${parsed.item ?? ''} ${parsed.wallet ?? ''} ${parsed.notes ?? ''}`
+    .toLowerCase()
+  const isSaving = SAVING_WORDS.some((w) => savingHint.includes(w))
+
+  let pool = wallets
+  let to: Wallet | null = null
+  if (isSaving) {
+    to = pool.find((w) => w.kind === 'reserve') ?? null
+    if (!to) {
+      to = await createWallet(DEFAULT_RESERVE_WALLET, 'reserve', 0)
+      pool = [...pool, to]
+    }
   }
 
-  const to = matchWallet(parsed.wallet, wallets)
   if (!to) {
-    const names = wallets.map((w) => w.name).join(', ')
-    return `🤔 Pindah ke wallet mana? Yang ada: ${names}.`
+    if (pool.length < 2) {
+      return '🤔 Cuma ada satu wallet, jadi belum ada tujuan pindahnya.'
+    }
+    to = matchWallet(parsed.wallet, pool)
+    if (!to) {
+      const names = pool.map((w) => w.name).join(', ')
+      return `🤔 Pindah ke wallet mana? Yang ada: ${names}.`
+    }
   }
 
-  const from = wallets.find((w) => w.kind === 'spendable' && w.id !== to.id)
+  const from = pool.find((w) => w.kind === 'spendable' && w.id !== to.id)
   if (!from) {
     return '🤔 Belum kebaca pindah dari wallet mana. Coba sebut asal dan tujuannya.'
   }
@@ -299,7 +381,7 @@ async function handleTransfer(
     toWalletId: to.id,
   }, settings.dayStartHour)
 
-  const allowance = await currentAllowance(settings, wallets)
+  const allowance = await currentAllowance(settings, pool)
   return formatTransfer({
     amount,
     fromWallet: from.name,
@@ -310,6 +392,45 @@ async function handleTransfer(
     // (spec §12); only spendable → spendable leaves it untouched.
     allowanceChanged: from.kind !== to.kind,
   })
+}
+
+/**
+ * Declaring a recurring bill or savings target (spec §4.3, §6.4).
+ *
+ * Declaring is a one-off: from then on the amount is reserved out of the
+ * allowance basis every cycle, and any payment whose item name matches settles
+ * it (see findCommitmentByName). This is what stops a monthly obligation from
+ * being charged to whichever single day it was paid on.
+ */
+async function handleCommitment(parsed: ParsedInput): Promise<string> {
+  const amount = parsed.amount
+  if (amount === null) {
+    return '🤔 Nominalnya berapa? Mis. "wifi 85k tiap tanggal 5".'
+  }
+  // dueDay is what separates a commitment from a one-off payment. The parser
+  // is told never to return this kind without one, but the model can still
+  // drop the field — asking beats inventing a date the user never gave.
+  if (parsed.dueDay === null) {
+    return `🤔 Tiap tanggal berapa "${parsed.item || 'ini'}" jatuh temponya? ` +
+      'Mis. "wifi 85k tiap tanggal 5".'
+  }
+
+  const name = parsed.item || 'Tagihan'
+  const haystack = `${name} ${parsed.notes ?? ''}`.toLowerCase()
+  const kind = SAVING_WORDS.some((w) => haystack.includes(w)) ? 'saving' : 'bill'
+
+  const existing = await findCommitmentByName(name)
+  if (existing) {
+    return `📌 "${existing.name}" sudah tercatat (${formatRupiah(existing.amount)}, ` +
+      `tiap tanggal ${existing.dueDay}).`
+  }
+
+  const commitment = await createCommitment(name, amount, kind, parsed.dueDay)
+  const label = kind === 'saving' ? 'Tabungan rutin' : 'Tagihan rutin'
+  return `📌 ${label} dicatat: ${commitment.name} — ${formatRupiah(commitment.amount)} ` +
+    `tiap tanggal ${commitment.dueDay}.\n` +
+    'Mulai sekarang nominalnya disisihkan otomatis dari jatah harian, ' +
+    'jadi pas bayar nanti nggak bikin jatah hari itu jebol.'
 }
 
 /**
@@ -376,7 +497,7 @@ export async function handleMessage(text: string, chatId: number): Promise<strin
     return `🤔 ${parsed.question ?? 'Maksudnya gimana? Coba tulis ulang.'}`
   }
   if (parsed.kind === 'commitment') {
-    return '📌 Cicilan/tagihan rutin belum didukung (Fase 2). Catat manual dulu ya.'
+    return await handleCommitment(parsed)
   }
   if (parsed.amount === null) {
     return '🤔 Belum kebaca angkanya. Coba tulis nominalnya, mis. "kopi 18k".'
